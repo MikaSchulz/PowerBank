@@ -1,3 +1,9 @@
+management:
+  otlp:
+    metrics:
+      export:
+        enabled: false   # no collector in tests
+
 spring:
   temporal:
     # in-memory test server instead of the dev server from Docker Compose

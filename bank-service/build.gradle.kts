@@ -21,6 +21,13 @@ dependencies {
     implementation(libs.temporal.kotlin)
     implementation(libs.fmodel.application)
 
+    // Observability: traces, metrics and logs via OpenTelemetry (OTLP)
+    implementation("org.springframework.boot:spring-boot-starter-opentelemetry")
+    implementation(libs.temporal.opentracing)                    // Temporal's tracing interceptors …
+    implementation("io.opentelemetry:opentelemetry-opentracing-shim") // … bridged to OpenTelemetry
+    implementation(libs.datasource.micrometer)                   // JDBC spans
+    implementation(libs.otel.logback.appender)                   // logs to OTLP
+
     runtimeOnly("org.postgresql:postgresql")
     developmentOnly("org.springframework.boot:spring-boot-docker-compose")
 
@@ -31,5 +38,6 @@ dependencies {
     testImplementation("org.testcontainers:testcontainers-postgresql")
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
     testImplementation(libs.temporal.testing)
+    testImplementation(libs.archunit)
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }

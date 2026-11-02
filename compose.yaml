@@ -10,4 +10,9 @@ services:
     image: temporalio/temporal:latest
     command: ["server", "start-dev", "--ip", "0.0.0.0"]
     ports: ["7233:7233", "8233:8233"]
+  # Grafana with Tempo (traces), Loki (logs) and Prometheus (metrics) in one container.
+  # Spring Boot detects the image and sends OTLP traces, metrics and logs to it automatically.
+  lgtm:
+    image: grafana/otel-lgtm:0.39.0
+    ports: ["3000:3000", "4317:4317", "4318:4318"]
   # later for stage 9: hashicorp/vault in dev mode

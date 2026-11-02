@@ -6,15 +6,23 @@ temporal = "1.40.0"
 fmodel = "3.7.0"
 junit = "6.0.3"
 coroutines = "1.10.2"
+archunit = "1.5.1"
+datasource-micrometer = "2.3.0"
+# must match the OpenTelemetry SDK version managed by Spring Boot (1.62.x)
+otel-logback-appender = "2.28.1-alpha"
 
 [libraries]
 temporal-starter   = { module = "io.temporal:temporal-spring-boot-starter", version.ref = "temporal" }
 temporal-kotlin    = { module = "io.temporal:temporal-kotlin", version.ref = "temporal" }
 temporal-testing   = { module = "io.temporal:temporal-testing", version.ref = "temporal" }
+temporal-opentracing = { module = "io.temporal:temporal-opentracing", version.ref = "temporal" }
 fmodel-domain      = { module = "com.fraktalio.fmodel:domain", version.ref = "fmodel" }
 fmodel-application = { module = "com.fraktalio.fmodel:application-vanilla", version.ref = "fmodel" }
 junit-bom          = { module = "org.junit:junit-bom", version.ref = "junit" }
 coroutines-core    = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
+archunit           = { module = "com.tngtech.archunit:archunit-junit5", version.ref = "archunit" }
+datasource-micrometer = { module = "net.ttddyy.observation:datasource-micrometer-spring-boot", version.ref = "datasource-micrometer" }
+otel-logback-appender = { module = "io.opentelemetry.instrumentation:opentelemetry-logback-appender-1.0", version.ref = "otel-logback-appender" }
 
 [plugins]
 kotlin-jvm                 = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }

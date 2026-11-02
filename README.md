@@ -13,11 +13,13 @@ Prerequisites: Java 25 and Docker. Gradle comes with the wrapper.
 ./gradlew :bank-service:bootRun
 ```
 
-On startup, Spring Boot runs `compose.yaml` (Postgres and the Temporal dev server) and keeps the containers running
-afterwards (`start-only`), so workflow histories survive app restarts.
+On startup, Spring Boot runs `compose.yaml` (Postgres, the Temporal dev server and Grafana LGTM) and keeps the
+containers running afterwards (`start-only`), so workflow histories survive app restarts.
 
+- UI: http://localhost:8080
 - API: http://localhost:8080/api
 - Temporal Web UI: http://localhost:8233
+- Grafana (traces, metrics, logs): http://localhost:3000
 
 Tests (Postgres via Testcontainers, Temporal in memory):
 
@@ -53,6 +55,68 @@ Open **http://localhost:8080** once the app is running. The UI is a plain HTML/J
 5. Kill the app (`Ctrl+C`) while an external transfer is *At external bank*, start it again:
    the workflow continues where it stopped.
 6. Block Alice, try to send money from her account (rejected), unblock her again.
+
+## Observability
+
+Traces, metrics and logs go via OpenTelemetry (OTLP) to the `grafana/otel-lgtm` container: Grafana with Tempo,
+Prometheus and Loki. Spring Boot detects the container through Docker Compose and configures the endpoints itself.
+Open Grafana at http://localhost:3000 → *Explore*.
+
+**Traces (Tempo):** one trace per request, from the HTTP call through Temporal into the database:
+
+```
+http post /api/transfers
+├─ query  INSERT INTO transfers …
+└─ StartWorkflow:TransferWorkflow
+   └─ RunWorkflow:TransferWorkflow
+      ├─ StartActivity:RiskAssess → RunActivity:RiskAssess → query …
+      └─ StartActivity:LedgerBookInternalTransfer → RunActivity:LedgerBookInternalTransfer
+         ├─ bank.ledger.lock      SELECT … FOR UPDATE   ← waiting for the row lock is visible here
+         ├─ bank.account.command  command=Debit         ← the fmodel aggregate: load postings, decide, save
+         └─ bank.account.command  command=Credit
+```
+
+- The Temporal spans come from the starter's tracing interceptors (`temporal-opentracing` plus the OpenTelemetry
+  OpenTracing shim). They are replay-safe: no duplicate spans when Temporal replays a workflow.
+- JDBC spans come from `datasource-micrometer`. SQL is recorded, bound values are not.
+- `bank.ledger.lock` and `bank.account.command` are Micrometer observations in the `Ledger` (span and timer at once).
+  Run the burst scenario and look at the lock waits.
+
+**Metrics (Prometheus):**
+
+| Metric | Source |
+| --- | --- |
+| `bank_transfers_finished_total{status, kind}` | workflow, via `Workflow.getMetricsScope()` (replay-safe, no double counting) |
+| `bank_transfer_approval_wait_*` | workflow: time between "awaiting approval" and the decision |
+| `bank_ledger_lock_milliseconds_*`, `bank_account_command_milliseconds_*` | ledger observations |
+| `temporal_*` (about 50 metrics) | Temporal SDK: workflow/activity latencies, schedule-to-start, failures, pollers, … |
+| `http_server_*`, `hikaricp_*`, `jvm_*` | Spring Boot |
+
+Example: `sum by (status, kind) (bank_transfers_finished_total)` or
+`histogram_quantile(0.95, sum by (le) (rate(bank_ledger_lock_milliseconds_bucket[5m])))`.
+
+**Logs (Loki):** console as usual, plus every log event via OTLP. Temporal puts `WorkflowId`, `RunId`,
+`ActivityType`, `Attempt` and `TaskQueue` into the MDC, so each log line carries them as attributes together with
+`trace_id`. In Grafana, *Related logs* on a trace jumps to its logs. Query example:
+`{service_name="bank-service"} | WorkflowId = "transfer-<id>"`.
+
+- In workflows, log with `Workflow.getLogger(...)`: it does not log again while a workflow is replayed.
+- Logs, spans and metric tags only contain pseudonymous IDs and amounts, never names or IBANs.
+
+**Temporal connection:** `spring.temporal.connection.target` is `localhost:7233`, not the `local` shortcut. With
+`local`, the SDK reported no `temporal_*` metrics in this setup.
+
+## Architecture rules
+
+`ArchitectureTest` (ArchUnit) turns the module boundaries and Temporal's determinism rules into tests:
+
+- Workflow code doesn't depend on the ledger, the API, Spring, JDBC, coroutines or fmodel. It only knows Temporal
+  and its activity contracts.
+- Workflow code doesn't call `Instant.now()`, `System.currentTimeMillis()`, `UUID.randomUUID()`, `Thread.sleep()`,
+  `Random`, … (use `Workflow.currentTimeMillis()`, `Workflow.randomUUID()`, `Workflow.sleep()`).
+- The domain only depends on Kotlin, coroutines and fmodel; the ledger doesn't know its callers; controllers don't
+  touch SQL.
+- A deliberately broken fixture (`NonDeterministicWorkflow`) proves the rules actually fire.
 
 ## Trying it out with curl
 
@@ -99,6 +163,7 @@ bank-service/
   activities/    LedgerActivities, RiskActivities, ExternalBankActivities
   externalbank/  external bank simulator: slow, fails technically, sometimes rejects
   api/           REST
+  config/        Temporal data converter, OpenTelemetry log appender
   resources/static/  the UI (HTML, CSS, JS)
 ```
 
@@ -148,8 +213,12 @@ bank-service/
   (`kind`, debtor, creditor, amount) that the API registers when it accepts a transfer, for listings.
 - **Status events:** opening, blocking and closing are decider events, but they are stored only as the current status
   in `accounts.status`. When loading, they are turned back into events.
-- **Activity signatures:** small dedicated DTOs instead of `AccountCommand` and `AccountEvent`, so Temporal doesn't
-  have to serialize polymorphic types and the workflow doesn't depend on `domain`.
+- **Activity signatures:** small dedicated DTOs (including `BookingOutcome`) instead of `AccountCommand` and
+  `AccountEvent`, so Temporal doesn't have to serialize polymorphic types and the workflow depends neither on `domain`
+  nor on the ledger.
+- **Temporal target:** `localhost:7233` instead of `local` (see *Observability*).
+- **Observability:** Grafana LGTM in `compose.yaml` and OpenTelemetry for traces, metrics and logs (not in the
+  original plan).
 
 ## Known learning points
 

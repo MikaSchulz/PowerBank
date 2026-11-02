@@ -58,14 +58,29 @@ class TransferWorkflowImpl : TransferWorkflow {
     private var state: TransferState? = null
     private var decision: ApprovalDecision? = null
 
+    /** Replay-aware: does not log again while Temporal replays the history. Only IDs and amounts, never the IBAN. */
+    private val log = Workflow.getLogger(TransferWorkflowImpl::class.java)
+
     override fun transfer(request: TransferRequest): TransferState {
         val external = request.creditorIban != null
         state = TransferState(request.transferId, TransferStatus.RECEIVED, request.amountCents, external)
+        log.info("Transfer {} received: {} cents, external={}", request.transferId, request.amountCents, external)
 
+        val result = process(request, external)
+        recordOutcome(result)
+        log.info("Transfer {} finished: {}{}", request.transferId, result.status, result.reason?.let { " ($it)" } ?: "")
+        return result
+    }
+
+    private fun process(request: TransferRequest, external: Boolean): TransferState {
         val assessment = risk.assess(RiskCheck(request.transferId, request.debtorAccountId, request.amountCents, external))
         if (assessment.reviewRequired) {
             update(TransferStatus.AWAITING_APPROVAL, assessment.reason)
+            log.info("Transfer {} awaits approval: {}", request.transferId, assessment.reason)
+            val waitingSince = Workflow.currentTimeMillis()
             val decided = Workflow.await(APPROVAL_TIMEOUT) { decision != null }
+            metrics().timer("bank_transfer_approval_wait")
+                .record(com.uber.m3.util.Duration.ofMillis((Workflow.currentTimeMillis() - waitingSince).toDouble()))
             val d = decision
             when {
                 !decided || d == null -> return reject(request, "No approval within the deadline")
@@ -76,6 +91,19 @@ class TransferWorkflowImpl : TransferWorkflow {
 
         return if (external) externalTransfer(request) else internalTransfer(request)
     }
+
+    /**
+     * Business metric through Temporal's metrics scope: replay-safe (no double counting during replay) and
+     * tagged with namespace, task queue and workflow type. The Spring Boot starter forwards it to Micrometer.
+     */
+    private fun recordOutcome(result: TransferState) {
+        metrics()
+            .tagged(mapOf("status" to result.status.name, "kind" to if (result.external) "external" else "internal"))
+            .counter("bank_transfers_finished")
+            .inc(1)
+    }
+
+    private fun metrics() = Workflow.getMetricsScope()
 
     /** No saga where a transaction suffices: debit and credit in one activity. */
     private fun internalTransfer(request: TransferRequest): TransferState {

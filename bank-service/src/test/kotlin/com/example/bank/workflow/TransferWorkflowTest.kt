@@ -1,5 +1,6 @@
 package com.example.bank.workflow
 
+import com.example.bank.activities.BookingOutcome
 import com.example.bank.activities.ExternalBankActivities
 import com.example.bank.activities.ExternalBankAnswer
 import com.example.bank.activities.ExternalDebit
@@ -12,7 +13,6 @@ import com.example.bank.activities.RiskAssessment
 import com.example.bank.activities.RiskCheck
 import com.example.bank.activities.TransferRejection
 import com.example.bank.config.TemporalConfig
-import com.example.bank.ledger.BookingResult
 import io.temporal.client.WorkflowClient
 import io.temporal.client.WorkflowClientOptions
 import io.temporal.client.WorkflowOptions
@@ -72,7 +72,7 @@ class TransferWorkflowTest {
 
     @Test
     fun `a business rejection by the ledger ends the transfer`() {
-        ledger.bookResult = BookingResult.rejected("Insufficient funds")
+        ledger.bookResult = BookingOutcome(booked = false, reason = "Insufficient funds")
 
         val result = run(internal(50_00))
 
@@ -101,7 +101,7 @@ class TransferWorkflowTest {
 
     @Test
     fun `without sufficient funds nothing is sent to the external bank`() {
-        ledger.debitResult = BookingResult.rejected("Insufficient funds")
+        ledger.debitResult = BookingOutcome(booked = false, reason = "Insufficient funds")
 
         val result = run(external(50_00))
 
@@ -217,9 +217,9 @@ class TransferWorkflowTest {
     class FakeLedger : LedgerActivities {
         val calls = CopyOnWriteArrayList<String>()
 
-        @Volatile var bookResult = BookingResult.BOOKED
+        @Volatile var bookResult = BookingOutcome(booked = true)
 
-        @Volatile var debitResult = BookingResult.BOOKED
+        @Volatile var debitResult = BookingOutcome(booked = true)
 
         override fun bookInternalTransfer(booking: InternalBooking) = bookResult.also { calls += "book" }
 
@@ -229,7 +229,7 @@ class TransferWorkflowTest {
             calls += "complete"
         }
 
-        override fun refundExternalTransfer(refund: Refund) = BookingResult.BOOKED.also { calls += "refund" }
+        override fun refundExternalTransfer(refund: Refund) = BookingOutcome(booked = true).also { calls += "refund" }
 
         override fun rejectTransfer(rejection: TransferRejection) {
             calls += "reject"

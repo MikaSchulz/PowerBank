@@ -26,10 +26,13 @@ import com.fraktalio.fmodel.application.EventSourcingAggregate
 import com.fraktalio.fmodel.application.handle
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
+import io.micrometer.observation.Observation
+import io.micrometer.observation.ObservationRegistry
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.stereotype.Component
 import org.springframework.transaction.support.TransactionTemplate
 import java.util.UUID
+import java.util.function.Supplier
 
 /** Result of a booking. A plain data class so it can be serialized as an activity result. */
 data class BookingResult(val booked: Boolean, val reason: String? = null) {
@@ -51,6 +54,7 @@ class Ledger(
     private val transfers: TransferRecords,
     private val jdbc: JdbcClient,
     private val tx: TransactionTemplate,
+    private val observations: ObservationRegistry,
 ) {
 
     fun openAccount(accountId: AccountId, customerId: CustomerId, overdraftLimitCents: Long = 0): BookingResult =
@@ -165,10 +169,15 @@ class Ledger(
      * transfers A→B and B→A cannot block each other (deadlock).
      */
     private fun lockInOrder(first: AccountId, second: AccountId) {
-        jdbc.sql("SELECT id FROM accounts WHERE id IN (:ids) ORDER BY id FOR UPDATE")
-            .param("ids", listOf(first.value, second.value))
-            .query()
-            .listOfRows()
+        // Observed as span and timer "bank.ledger.lock": under contention (e.g. the burst scenario) the wait is visible.
+        Observation.createNotStarted("bank.ledger.lock", observations).observe(
+            Runnable {
+                jdbc.sql("SELECT id FROM accounts WHERE id IN (:ids) ORDER BY id FOR UPDATE")
+                    .param("ids", listOf(first.value, second.value))
+                    .query()
+                    .listOfRows()
+            },
+        )
     }
 
     private fun debitOf(transferId: TransferId): Pair<AccountId, Long> =
@@ -181,7 +190,12 @@ class Ledger(
      * fmodel returns a `Flow`. `runBlocking` runs on the current thread, so the JDBC transaction
      * (bound to the thread) is preserved. Never use `withContext(Dispatchers.IO)` here.
      */
-    private fun handle(command: AccountCommand): List<AccountEvent> = runBlocking { aggregate.handle(command).toList() }
+    private fun handle(command: AccountCommand): List<AccountEvent> =
+        checkNotNull(
+            Observation.createNotStarted("bank.account.command", observations)
+                .lowCardinalityKeyValue("command", command::class.simpleName ?: "unknown")
+                .observe(Supplier { runBlocking { aggregate.handle(command).toList() } }),
+        )
 
     private fun <T> inTransaction(block: () -> T): T = tx.execute { block() }
 
