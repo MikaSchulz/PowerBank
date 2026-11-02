@@ -1,0 +1,30 @@
+spring:
+  application:
+    name: bank-service
+  docker:
+    compose:
+      file: ../compose.yaml
+      lifecycle-management: start-only
+  temporal:
+    connection:
+      target: local
+    namespace: default
+    workers-auto-discovery:
+      packages:
+        - com.example.bank
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+
+bank:
+  risk:
+    review-threshold-cents: 1000000          # manual approval from 10,000 €
+    external-review-threshold-cents: 500000  # to external banks from 5,000 €
+  external-bank:
+    min-delay: 1s
+    max-delay: 4s
+    rejection-rate: 0.2
+    failure-rate: 0.1
