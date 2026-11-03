@@ -26,7 +26,8 @@ data class TransferBody(
     val creditorIban: String? = null,
 )
 
-data class TransferAccepted(val transferId: UUID, val statusUrl: String)
+/** [traceId] is the W3C trace ID of this request (null if not sampled): the whole transfer is one trace in Tempo. */
+data class TransferAccepted(val transferId: UUID, val statusUrl: String, val traceId: String?)
 
 @RestController
 @RequestMapping("/api/transfers")
@@ -48,8 +49,8 @@ class TransferController(
             creditorAccountId = body.creditorAccountId,
             creditorIban = body.creditorIban?.let(Iban::normalize),
         )
-        transfers.start(request)
-        return accepted(request.transferId)
+        val traceId = transfers.start(request)
+        return accepted(request.transferId, traceId)
     }
 
     @GetMapping
@@ -70,9 +71,9 @@ class TransferController(
         transfers.approve(transferId, decision)
 
     companion object {
-        fun accepted(transferId: UUID): ResponseEntity<TransferAccepted> {
+        fun accepted(transferId: UUID, traceId: String?): ResponseEntity<TransferAccepted> {
             val url = "/api/transfers/$transferId"
-            return ResponseEntity.status(HttpStatus.ACCEPTED).header("Location", url).body(TransferAccepted(transferId, url))
+            return ResponseEntity.status(HttpStatus.ACCEPTED).header("Location", url).body(TransferAccepted(transferId, url, traceId))
         }
     }
 }

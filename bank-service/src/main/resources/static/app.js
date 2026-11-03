@@ -1,6 +1,7 @@
 // PowerBank UI: plain ES module, no build step. Talks to the bank-service REST API on the same origin.
 
 const TEMPORAL_UI = 'http://localhost:8233';
+const GRAFANA = 'http://localhost:3000';
 const CASH = '00000000-0000-0000-0000-000000000001';
 const CLEARING = '00000000-0000-0000-0000-000000000002';
 const POLL_MS = 1500;
@@ -46,6 +47,7 @@ const state = {
   transferCache: new Map(),
   pendingDeny: null,
   depositTarget: null,
+  traceIds: new Map(), // transferId -> W3C trace ID, from the POST response (before the list knows it)
 };
 
 // ---------- helpers ----------
@@ -123,13 +125,43 @@ function label(id) {
   return nicknames()[id] || `Account ${short(id).slice(0, 4).toUpperCase()}`;
 }
 
+// ---------- W3C trace context ----------
+
+const randomHex = (bytes) => [...crypto.getRandomValues(new Uint8Array(bytes))].map((b) => b.toString(16).padStart(2, '0')).join('');
+
+/**
+ * Every user action starts its own trace: the browser sends a W3C `traceparent` header
+ * (version 00, 16-byte trace ID, 8-byte parent span ID, flags). Flag 01 = sampled, so the backend records the trace
+ * and Temporal carries it into the workflow. Polling sends flag 00 (not sampled) to keep Tempo free of noise.
+ */
+function traceparent(sampled) {
+  let traceId = randomHex(16);
+  while (/^0+$/.test(traceId)) traceId = randomHex(16);
+  return `00-${traceId}-${randomHex(8)}-${sampled ? '01' : '00'}`;
+}
+
+function grafanaTraceUrl(traceId, fromIso, toIso) {
+  const from = fromIso ? Date.parse(fromIso) - 5 * 60_000 : 'now-24h';
+  const to = toIso ? Date.parse(toIso) + 10 * 60_000 : 'now';
+  const panes = {
+    a: {
+      datasource: 'tempo',
+      queries: [{ refId: 'A', datasource: { type: 'tempo', uid: 'tempo' }, queryType: 'traceql', query: traceId }],
+      range: { from: String(from), to: String(to) },
+    },
+  };
+  return `${GRAFANA}/explore?schemaVersion=1&orgId=1&panes=${encodeURIComponent(JSON.stringify(panes))}`;
+}
+
 // ---------- API ----------
 
-async function api(method, path, body) {
+async function api(method, path, body, { sampled = true } = {}) {
   try {
+    const headers = { traceparent: traceparent(sampled) };
+    if (body !== undefined) headers['Content-Type'] = 'application/json';
     const response = await fetch(path, {
       method,
-      headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
+      headers,
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     const text = await response.text();
@@ -171,10 +203,11 @@ async function refresh() {
   refreshing = true;
   try {
     const query = state.accountFilter ? `?accountId=${state.accountFilter}&limit=80` : '?limit=80';
+    const quiet = { sampled: false };
     const [accounts, transfers, summary] = await Promise.all([
-      api('GET', '/api/accounts'),
-      api('GET', `/api/transfers${query}`),
-      api('GET', '/api/ledger/summary'),
+      api('GET', '/api/accounts', undefined, quiet),
+      api('GET', `/api/transfers${query}`, undefined, quiet),
+      api('GET', '/api/ledger/summary', undefined, quiet),
     ]);
     if (accounts.ok) state.accounts = accounts.data;
     if (transfers.ok) {
@@ -194,13 +227,14 @@ async function refreshDrawer() {
   const drawer = state.drawer;
   if (!drawer) return;
   if (drawer.type === 'transfer') {
+    const quiet = { sampled: false };
     const [live, postings] = await Promise.all([
-      api('GET', `/api/transfers/${drawer.id}`),
-      api('GET', `/api/transfers/${drawer.id}/postings`),
+      api('GET', `/api/transfers/${drawer.id}`, undefined, quiet),
+      api('GET', `/api/transfers/${drawer.id}/postings`, undefined, quiet),
     ]);
     state.drawerData = { live: live.ok ? live.data : null, postings: postings.ok ? postings.data : [] };
   } else {
-    const postings = await api('GET', `/api/accounts/${drawer.id}/postings`);
+    const postings = await api('GET', `/api/accounts/${drawer.id}/postings`, undefined, { sampled: false });
     state.drawerData = { postings: postings.ok ? postings.data : [] };
   }
 }
@@ -429,6 +463,7 @@ function transferDetails(id) {
   const info = STATUS[t.status] || { label: t.status || 'Loading…', explain: '' };
   const postings = state.drawerData?.postings || [];
   const temporalLink = `${TEMPORAL_UI}/namespaces/default/workflows?query=${encodeURIComponent(`WorkflowId="transfer-${id}"`)}`;
+  const traceId = t.traceId || state.traceIds.get(id);
 
   return `
     <div class="d-eyebrow">${esc((t.kind || 'transfer').toLowerCase())} transfer</div>
@@ -451,11 +486,14 @@ function transferDetails(id) {
       <dl class="d-grid">
         <dt>Transfer ID</dt><dd class="mono">${esc(id)}</dd>
         <dt>Workflow ID</dt><dd class="mono">transfer-${esc(id)}</dd>
+        <dt>Trace ID</dt><dd class="mono">${traceId ? esc(traceId) : '<span class="muted">not recorded</span>'}</dd>
         ${t.createdAt ? `<dt>Created</dt><dd>${esc(new Date(t.createdAt).toLocaleString())}</dd>` : ''}
       </dl>
       <div class="d-actions">
         <a class="btn ghost" href="${temporalLink}" target="_blank" rel="noopener">Open in Temporal UI
           <svg viewBox="0 0 24 24"><path d="M7 17 17 7M9 7h8v8"/></svg></a>
+        ${traceId ? `<a class="btn ghost" href="${grafanaTraceUrl(traceId, t.createdAt, t.updatedAt)}" target="_blank" rel="noopener">Open trace in Grafana
+          <svg viewBox="0 0 24 24"><path d="M7 17 17 7M9 7h8v8"/></svg></a>` : ''}
         <button class="btn ghost" data-action="copy" data-value="${id}">Copy ID</button>
       </div>
     </div>`;
@@ -595,6 +633,7 @@ function readForm() {
 async function submitTransfer(path, body, { open = true } = {}) {
   const result = await api('POST', path, body);
   if (result.ok) {
+    if (result.data.traceId) state.traceIds.set(result.data.transferId, result.data.traceId);
     if (open) openDrawer('transfer', result.data.transferId);
     refresh();
   }
