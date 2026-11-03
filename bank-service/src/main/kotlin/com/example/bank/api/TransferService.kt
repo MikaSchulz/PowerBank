@@ -1,12 +1,12 @@
 package com.example.bank.api
 
 import com.example.bank.domain.TransferId
-import com.example.bank.observability.BankSpans
 import com.example.bank.ledger.SystemAccounts
 import com.example.bank.ledger.TransferDetails
 import com.example.bank.ledger.TransferKind
 import com.example.bank.ledger.TransferRecordStatus
 import com.example.bank.ledger.TransferRecords
+import com.example.bank.observability.BankSpans
 import com.example.bank.workflow.ApprovalDecision
 import com.example.bank.workflow.BANK_TASK_QUEUE
 import com.example.bank.workflow.TransferRequest
@@ -89,7 +89,7 @@ class TransferService(
             WorkflowClient.start(workflow::transfer, request)
         } catch (e: WorkflowExecutionAlreadyStarted) {
             throw e // the registration belongs to the first submission
-        } catch (e: RuntimeException) {
+        } catch (e: RuntimeException) { // whatever failed: clean up, then rethrow
             records.discardIfPending(TransferId(request.transferId))
             throw e
         }
@@ -105,7 +105,8 @@ class TransferService(
                 transferId = transferId,
                 status = record.status.toTransferStatus(),
                 amountCents = 0, // only available in the postings or the workflow
-                external = record.status in setOf(TransferRecordStatus.DEBITED, TransferRecordStatus.COMPLETED, TransferRecordStatus.REFUNDED),
+                external =
+                record.status in setOf(TransferRecordStatus.DEBITED, TransferRecordStatus.COMPLETED, TransferRecordStatus.REFUNDED),
                 reason = record.reason,
             )
         }
@@ -144,7 +145,7 @@ class TransferService(
 
     private fun liveStatus(transferId: UUID): TransferState? = try {
         stub(transferId).status()
-    } catch (e: RuntimeException) {
+    } catch (e: RuntimeException) { // best effort: the ledger status is the fallback
         log.debug("Could not query transfer {}: {}", transferId, e.message)
         null
     }

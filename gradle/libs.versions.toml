@@ -10,6 +10,7 @@ archunit = "1.5.1"
 datasource-micrometer = "2.3.0"
 # must match the OpenTelemetry SDK version managed by Spring Boot (1.62.x)
 otel-logback-appender = "2.28.1-alpha"
+ktlint = "1.8.0"
 
 [libraries]
 temporal-starter   = { module = "io.temporal:temporal-spring-boot-starter", version.ref = "temporal" }
@@ -29,3 +30,4 @@ kotlin-jvm                 = { id = "org.jetbrains.kotlin.jvm", version.ref = "k
 kotlin-spring              = { id = "org.jetbrains.kotlin.plugin.spring", version.ref = "kotlin" }
 spring-boot                = { id = "org.springframework.boot", version.ref = "spring-boot" }
 spring-dependency-management = { id = "io.spring.dependency-management", version.ref = "spring-dependency-management" }
+spotless                   = { id = "com.diffplug.spotless", version = "8.11.0" }

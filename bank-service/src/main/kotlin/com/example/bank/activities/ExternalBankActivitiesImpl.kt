@@ -31,7 +31,7 @@ class ExternalBankActivitiesImpl(
             observation.openScope().use {
                 externalBank.receive(payment.transferId, payment.creditorIban, payment.amountCents)
             }.also { observation.lowCardinalityKeyValue("outcome", if (it.accepted) "accepted" else "rejected") }
-        } catch (e: RuntimeException) {
+        } catch (e: RuntimeException) { // records any failure, then rethrows it
             observation.lowCardinalityKeyValue("outcome", "failure")
             observation.error(e)
             throw e

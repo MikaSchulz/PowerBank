@@ -125,12 +125,17 @@ class LedgerTest @Autowired constructor(
         val b = fundedAccount(1_000_00)
         val pool = Executors.newFixedThreadPool(16)
 
-        val results = pool.invokeAll((1..60).map { i ->
-            Callable {
-                if (i % 2 == 0) ledger.bookInternalTransfer(newTransfer(), a, b, 1_00)
-                else ledger.bookInternalTransfer(newTransfer(), b, a, 1_00)
-            }
-        }).map { it.get() }
+        val results = pool.invokeAll(
+            (1..60).map { i ->
+                Callable {
+                    if (i % 2 == 0) {
+                        ledger.bookInternalTransfer(newTransfer(), a, b, 1_00)
+                    } else {
+                        ledger.bookInternalTransfer(newTransfer(), b, a, 1_00)
+                    }
+                }
+            },
+        ).map { it.get() }
         pool.shutdown()
 
         assertTrue(results.all { it.booked })
@@ -205,7 +210,9 @@ class LedgerTest @Autowired constructor(
         val error = assertThrows<Exception> {
             tx.executeWithoutResult {
                 jdbc.sql("INSERT INTO transfers (id, status) VALUES (:t, 'PENDING')").param("t", t.value).update()
-                jdbc.sql("INSERT INTO postings (transfer_id, account_id, leg, amount_cents, booked_at) VALUES (:t, :a, 'credit', 12345, now())")
+                jdbc.sql(
+                    "INSERT INTO postings (transfer_id, account_id, leg, amount_cents, booked_at) VALUES (:t, :a, 'credit', 12345, now())",
+                )
                     .param("t", t.value).param("a", a.value).update()
             }
         }

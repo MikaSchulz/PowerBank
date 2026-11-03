@@ -57,7 +57,7 @@ class TransferController(
     fun list(
         @RequestParam(required = false) accountId: UUID?,
         @RequestParam(defaultValue = "50") limit: Int,
-    ): List<TransferView> = transfers.list(accountId, limit.coerceIn(1, 200))
+    ): List<TransferView> = transfers.list(accountId, limit.coerceIn(1, MAX_LIMIT))
 
     @GetMapping("/{transferId}/postings")
     fun postings(@PathVariable transferId: UUID): List<PostingView> = queries.postingsOfTransfer(TransferId(transferId))
@@ -71,6 +71,8 @@ class TransferController(
         transfers.approve(transferId, decision)
 
     companion object {
+        private const val MAX_LIMIT = 200
+
         fun accepted(transferId: UUID, traceId: String?): ResponseEntity<TransferAccepted> {
             val url = "/api/transfers/$transferId"
             return ResponseEntity.status(HttpStatus.ACCEPTED).header("Location", url).body(TransferAccepted(transferId, url, traceId))

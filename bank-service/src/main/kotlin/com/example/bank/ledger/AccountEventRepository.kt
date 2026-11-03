@@ -11,8 +11,8 @@ import com.example.bank.domain.account.AccountKind
 import com.example.bank.domain.account.AccountOpened
 import com.example.bank.domain.account.AccountStatus
 import com.example.bank.domain.account.AccountUnblocked
-import com.example.bank.domain.account.Credited
 import com.example.bank.domain.account.CreditReversed
+import com.example.bank.domain.account.Credited
 import com.example.bank.domain.account.DebitReversed
 import com.example.bank.domain.account.Debited
 import com.example.bank.domain.account.PostingEvent
@@ -133,8 +133,11 @@ class AccountEventRepository(private val jdbc: JdbcClient) : EventRepository<Acc
                 "debit" -> Debited(account, transfer, -signedAmountCents)
                 "credit" -> Credited(account, transfer, signedAmountCents)
                 "refund" ->
-                    if (signedAmountCents > 0) DebitReversed(account, transfer, signedAmountCents)
-                    else CreditReversed(account, transfer, -signedAmountCents)
+                    if (signedAmountCents > 0) {
+                        DebitReversed(account, transfer, signedAmountCents)
+                    } else {
+                        CreditReversed(account, transfer, -signedAmountCents)
+                    }
                 else -> error("Unknown posting leg: $leg")
             }
     }

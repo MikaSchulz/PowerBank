@@ -8,6 +8,7 @@ import org.springframework.boot.micrometer.tracing.opentelemetry.autoconfigure.o
 import org.springframework.boot.opentelemetry.autoconfigure.logging.otlp.OtlpLoggingConnectionDetails
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
+import org.springframework.http.HttpStatusCode
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
@@ -54,13 +55,13 @@ class BrowserTelemetryController(
         val target = targetFor(signal) ?: return ResponseEntity.noContent().build() // no collector configured: drop
 
         val upstream = HttpRequest.newBuilder(URI.create(target))
-            .timeout(Duration.ofSeconds(5))
+            .timeout(FORWARD_TIMEOUT)
             .header(HttpHeaders.CONTENT_TYPE, contentType)
             .POST(HttpRequest.BodyPublishers.ofByteArray(body))
             .build()
         return try {
-            val status = http.send(upstream, HttpResponse.BodyHandlers.discarding()).statusCode()
-            if (status in 200..299) ResponseEntity.accepted().build() else ResponseEntity.status(HttpStatus.BAD_GATEWAY).build()
+            val status = HttpStatusCode.valueOf(http.send(upstream, HttpResponse.BodyHandlers.discarding()).statusCode())
+            if (status.is2xxSuccessful) ResponseEntity.accepted().build() else ResponseEntity.status(HttpStatus.BAD_GATEWAY).build()
         } catch (e: IOException) {
             log.debug("Forwarding browser {} to {} failed: {}", signal, target, e.message)
             ResponseEntity.status(HttpStatus.BAD_GATEWAY).build()
@@ -80,5 +81,6 @@ class BrowserTelemetryController(
     companion object {
         private val SIGNALS = setOf("traces", "logs", "metrics")
         private const val MAX_BYTES = 2 * 1024 * 1024
+        private val FORWARD_TIMEOUT = Duration.ofSeconds(5)
     }
 }

@@ -108,7 +108,9 @@ class TransferWorkflowImpl : TransferWorkflow {
     /** No saga where a transaction suffices: debit and credit in one activity. */
     private fun internalTransfer(request: TransferRequest): TransferState {
         val creditor = request.creditorAccountId ?: return reject(request, "Creditor account missing")
-        val result = ledger.bookInternalTransfer(InternalBooking(request.transferId, request.debtorAccountId, creditor, request.amountCents))
+        val result = ledger.bookInternalTransfer(
+            InternalBooking(request.transferId, request.debtorAccountId, creditor, request.amountCents),
+        )
         return if (result.booked) update(TransferStatus.BOOKED) else update(TransferStatus.REJECTED, result.reason)
     }
 
@@ -127,6 +129,7 @@ class TransferWorkflowImpl : TransferWorkflow {
         } catch (e: ActivityFailure) {
             // All retries exhausted. Careful, in real life this is ambiguous: did the external bank book it after all?
             // The simulator is idempotent per transfer ID; a real integration would need a status inquiry.
+            log.warn("Transfer {}: external bank unreachable after all retries, refunding", request.transferId, e)
             ExternalBankAnswer(accepted = false, reason = "External bank unreachable")
         }
 
