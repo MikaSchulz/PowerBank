@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build and test (Java 25)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      # JDK 25 for the Gradle toolchain (javaVersion=25 in gradle.properties)
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 25
+
+      # Caches Gradle and validates the wrapper
+      - uses: gradle/actions/setup-gradle@v5
+
+      # Unit, workflow and ArchUnit tests plus the Testcontainers tests (Docker is available on GitHub runners)
+      - run: ./gradlew build
+
+      - uses: actions/upload-artifact@v5
+        if: failure()
+        with:
+          name: test-reports
+          path: |
+            */build/reports/tests/
+            */build/test-results/
+          retention-days: 7
