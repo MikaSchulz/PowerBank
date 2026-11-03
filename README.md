@@ -170,7 +170,8 @@ Example: `sum by (status, kind) (bank_transfers_finished_total)` or
 `{service_name="bank-service"} | WorkflowId = "transfer-<id>"`.
 
 - In workflows, log with `Workflow.getLogger(...)`: it does not log again while a workflow is replayed.
-- Logs, spans and metric tags only contain pseudonymous IDs and amounts, never names or IBANs.
+- Logs and spans only contain pseudonymous IDs (transfer, account), never names, IBANs, amounts or balances. Metrics
+  only contain aggregates. Amounts are in the ledger and, until stage 9 encrypts them, in the Temporal UI.
 
 **Dashboard and alerts (Grafana):** provisioned from `observability/grafana` on every start of the LGTM container.
 

@@ -60,6 +60,7 @@ class ExternalBankSimulator(properties: ExternalBankProperties) {
         failureRate = properties.failureRate,
     )
 
+    @Suppress("UNUSED_PARAMETER") // part of the payment like at a real bank; the simulator doesn't need it
     fun receive(transferId: UUID, creditorIban: String, amountCents: Long): ExternalBankAnswer {
         val current = settings
         sleepRandomly(current)
@@ -68,7 +69,7 @@ class ExternalBankSimulator(properties: ExternalBankProperties) {
             throw ExternalBankUnavailable()
         }
         return decisions.computeIfAbsent(transferId) { decide(creditorIban, current) }
-            .also { log.info("External bank: transfer {} of {} cents -> {}", transferId, amountCents, it) }
+            .also { log.info("External bank: transfer {} -> {}", transferId, it) }
     }
 
     private fun decide(creditorIban: String, current: ExternalBankSettings): ExternalBankAnswer = when {
