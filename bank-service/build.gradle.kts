@@ -1,3 +1,6 @@
+import java.net.InetSocketAddress
+import java.net.Socket
+
 plugins {
     kotlin("jvm")
     kotlin("plugin.spring")
@@ -29,13 +32,9 @@ dependencies {
     implementation(libs.otel.logback.appender)                   // logs to OTLP
 
     runtimeOnly("org.postgresql:postgresql")
-    developmentOnly("org.springframework.boot:spring-boot-docker-compose")
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.boot:spring-boot-starter-webmvc-test")
-    testImplementation("org.springframework.boot:spring-boot-testcontainers")
-    testImplementation("org.testcontainers:testcontainers-junit-jupiter")
-    testImplementation("org.testcontainers:testcontainers-postgresql")
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
     testImplementation(libs.temporal.testing)
     testImplementation(libs.archunit)
@@ -48,3 +47,39 @@ tasks.test {
     inputs.dir(rootProject.file("observability")).withPropertyName("observability").withPathSensitivity(PathSensitivity.RELATIVE)
     inputs.file(rootProject.file("compose.yaml")).withPropertyName("compose").withPathSensitivity(PathSensitivity.RELATIVE)
 }
+
+// Two kinds of tests:
+// - test: no containers (domain, workflow with Temporal's in-memory test environment, ArchUnit, web slices, files).
+// - integrationTest: against the local stack from compose.yaml, which you start yourself (docker compose up -d --wait).
+//   It uses its own Postgres schema and Temporal namespace, so it doesn't mix with the data of the running app.
+@Suppress("UnstableApiUsage")
+testing {
+    suites {
+        register<JvmTestSuite>("integrationTest") {
+            dependencies {
+                implementation(project())
+            }
+            targets.all {
+                testTask.configure {
+                    description = "Runs the integration tests against the local Docker Compose stack."
+                    group = LifecycleBasePlugin.VERIFICATION_GROUP
+                    shouldRunAfter(tasks.test)
+                    doFirst {
+                        val down = listOf(5432 to "Postgres", 7233 to "Temporal").filterNot { (port, _) ->
+                            runCatching { Socket().use { it.connect(InetSocketAddress("localhost", port), 1000) } }.isSuccess
+                        }
+                        if (down.isNotEmpty()) {
+                            throw GradleException(
+                                "${down.joinToString { (port, name) -> "$name (localhost:$port)" }} not reachable. " +
+                                    "Start the local stack first: docker compose up -d --wait",
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+configurations["integrationTestImplementation"].extendsFrom(configurations.testImplementation.get())
+configurations["integrationTestRuntimeOnly"].extendsFrom(configurations.testRuntimeOnly.get())

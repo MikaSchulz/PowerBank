@@ -1,6 +1,6 @@
 package com.example.bank.api
 
-import com.example.bank.TestcontainersConfiguration
+import com.example.bank.IntegrationTest
 import com.example.bank.domain.AccountId
 import com.example.bank.ledger.LedgerQueries
 import com.example.bank.ledger.SystemAccounts
@@ -13,11 +13,7 @@ import io.temporal.client.WorkflowClient
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.test.context.SpringBootTest
-import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
-import org.springframework.context.annotation.Import
 import org.springframework.http.MediaType
-import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
@@ -31,10 +27,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /** End to end: REST → TransferWorkflow (Temporal test server) → activities → ledger (Postgres). */
-@SpringBootTest
-@AutoConfigureMockMvc
-@ActiveProfiles("test")
-@Import(TestcontainersConfiguration::class)
+@IntegrationTest
 class TransferApiTest @Autowired constructor(
     private val mvc: MockMvc,
     private val client: WorkflowClient,

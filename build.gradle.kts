@@ -27,3 +27,17 @@ subprojects {
         testLogging { events("failed"); exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL }
     }
 }
+
+// The local stack (compose.yaml) is started and stopped by hand, never by the app or the unit tests.
+// These are shortcuts for the docker compose commands.
+tasks.register<Exec>("composeUp") {
+    group = "docker"
+    description = "Starts Postgres, Temporal and Grafana LGTM and waits until they are ready (docker compose up -d --wait)."
+    commandLine("docker", "compose", "up", "-d", "--wait")
+}
+
+tasks.register<Exec>("composeDown") {
+    group = "docker"
+    description = "Stops the local stack; the volumes (ledger, workflows) are kept (docker compose down)."
+    commandLine("docker", "compose", "down")
+}

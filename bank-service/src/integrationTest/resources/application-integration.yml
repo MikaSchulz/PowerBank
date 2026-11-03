@@ -1,0 +1,31 @@
+# Integration tests run against the local stack (docker compose up -d --wait), separated from the app's data:
+# their own Postgres schema and their own Temporal namespace (created by compose.yaml).
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/bank?currentSchema=integration_test
+  flyway:
+    schemas: integration_test   # created by Flyway, with its own migration history
+  temporal:
+    namespace: integration-test
+
+management:
+  # Test traces, metrics and logs don't belong in Grafana; TracePropagationTest records spans in memory.
+  tracing:
+    export:
+      otlp:
+        enabled: false
+  logging:
+    export:
+      otlp:
+        enabled: false
+  otlp:
+    metrics:
+      export:
+        enabled: false
+
+bank:
+  external-bank:
+    min-delay: 0ms
+    max-delay: 0ms
+    rejection-rate: 0.0
+    failure-rate: 0.0

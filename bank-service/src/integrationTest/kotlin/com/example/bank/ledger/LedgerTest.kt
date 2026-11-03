@@ -1,6 +1,6 @@
 package com.example.bank.ledger
 
-import com.example.bank.TestcontainersConfiguration
+import com.example.bank.IntegrationTest
 import com.example.bank.customer.CustomerRecords
 import com.example.bank.domain.AccountId
 import com.example.bank.domain.TransferId
@@ -8,10 +8,7 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.test.context.SpringBootTest
-import org.springframework.context.annotation.Import
 import org.springframework.jdbc.core.simple.JdbcClient
-import org.springframework.test.context.ActiveProfiles
 import org.springframework.transaction.support.TransactionTemplate
 import java.util.UUID
 import java.util.concurrent.Callable
@@ -20,9 +17,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-@SpringBootTest
-@ActiveProfiles("test")
-@Import(TestcontainersConfiguration::class)
+@IntegrationTest
 class LedgerTest @Autowired constructor(
     private val ledger: Ledger,
     private val queries: LedgerQueries,
