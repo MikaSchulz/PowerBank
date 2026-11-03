@@ -54,14 +54,14 @@ The accounts have no names: the bank only knows pseudonymous IDs (see [decision 
    - the ledger sum, which stays at 0;
    - lock waits rising during a burst;
    - the external bank's outcomes.
-4. **Alerts:** the first chaos phase starts five minutes after the start. On the dashboard and under Alerting → Alert
-   rules:
+4. **Alerts:** the first chaos phase starts five minutes after the start and lasts four minutes. On the dashboard and
+   under Alerting → Alert rules (times from a test run):
    - the external bank panel shows rejections and refunds rising;
-   - "External bank does not accept payments" becomes pending, then fires after about three minutes of chaos;
-   - "Many external transfers refunded" follows; it looks at the last 15 minutes, so it needs a few minutes of chaos to
-     see more than 30 % refunds;
-   - after four minutes the bank is back to normal. The first alert resolves a few minutes later, the refund alert only
-     once the chaos has left its 15-minute window.
+   - "Many external transfers refunded" fires after about three and a half minutes of chaos;
+   - "External bank does not accept payments" becomes pending a little later and fires about a minute after the chaos
+     ended: it looks at the last 5 minutes and waits one more minute to be sure;
+   - it resolves about four minutes after the chaos, the refund alert (last 15 minutes) about 13 minutes after it,
+     a few minutes before the next chaos phase.
 5. **Approvals in Temporal** (http://localhost:8233): a `TransferWorkflow` waiting for an approval shows the workflow, its `status` query and, once decided, the `approve` update in its history. In the UI you can approve or deny it yourself before the generator does.
 6. **Break something** and watch the system cope:
    - `docker compose stop temporal`: no transfer can start; after about two minutes "Temporal server down" fires. `docker compose start temporal`: everything continues where it stopped, because the workflows are on a volume.
