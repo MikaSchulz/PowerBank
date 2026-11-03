@@ -20,7 +20,6 @@ val accountDecider: Decider<AccountCommand, Account, AccountEvent> = Decider(
 )
 
 // One exhaustive `when` over all commands: the whole business logic of an account, easiest to read in one place.
-@Suppress("CyclomaticComplexMethod")
 internal fun decide(c: AccountCommand, s: Account): Flow<AccountEvent> = when (c) {
     is OpenAccount -> when {
         s.exists -> reject(c, "Account already exists")

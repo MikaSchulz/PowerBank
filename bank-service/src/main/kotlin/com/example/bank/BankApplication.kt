@@ -8,7 +8,6 @@ import org.springframework.boot.runApplication
 @ConfigurationPropertiesScan
 class BankApplication
 
-@Suppress("SpreadOperator") // the standard Spring Boot entry point; runs once
 fun main(args: Array<String>) {
     runApplication<BankApplication>(*args)
 }

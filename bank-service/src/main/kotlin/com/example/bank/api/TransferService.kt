@@ -89,7 +89,7 @@ class TransferService(
             WorkflowClient.start(workflow::transfer, request)
         } catch (e: WorkflowExecutionAlreadyStarted) {
             throw e // the registration belongs to the first submission
-        } catch (@Suppress("TooGenericExceptionCaught") e: RuntimeException) { // whatever failed: clean up, then rethrow
+        } catch (e: RuntimeException) { // whatever failed: clean up, then rethrow
             records.discardIfPending(TransferId(request.transferId))
             throw e
         }
@@ -145,7 +145,7 @@ class TransferService(
 
     private fun liveStatus(transferId: UUID): TransferState? = try {
         stub(transferId).status()
-    } catch (@Suppress("TooGenericExceptionCaught") e: RuntimeException) { // best effort: the ledger status is the fallback
+    } catch (e: RuntimeException) { // best effort: the ledger status is the fallback
         log.debug("Could not query transfer {}: {}", transferId, e.message)
         null
     }

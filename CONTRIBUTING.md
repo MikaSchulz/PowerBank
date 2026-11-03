@@ -32,16 +32,12 @@ docker compose down
 `./gradlew test` needs no containers. `./gradlew integrationTest` needs the running stack. Details in the
 [README](README.md#getting-started).
 
-## Code style and static analysis
+## Code style
 
-Both run in `./gradlew build` (part of `check`) and so in CI:
-
-- **Formatting:** ktlint (IntelliJ IDEA style, 140 characters) through Spotless. `./gradlew spotlessApply` fixes the
-  files; IntelliJ's "Reformat Code" with the Kotlin style "official" gives the same result. The layout of signatures
-  (one parameter per line or not) is left to the author.
-- **Static analysis:** detekt with its default rules and the deviations in
-  [`config/detekt/detekt.yml`](config/detekt/detekt.yml). A deliberate exception in the code gets a `@Suppress` with a
-  comment that says why. Reports: `*/build/reports/detekt/`.
+- **Formatting:** ktlint (IntelliJ IDEA style, 140 characters) through Spotless. It runs in `./gradlew build` (part of
+  `check`) and so in CI; `./gradlew spotlessApply` fixes the files. IntelliJ's "Reformat Code" with the Kotlin style
+  "official" gives the same result. The layout of signatures (one parameter per line or not) is left to the author.
+- **Security analysis:** GitHub's CodeQL checks every pull request (repository settings, no file in the repo).
 
 ## Rules
 

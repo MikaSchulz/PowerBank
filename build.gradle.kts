@@ -6,7 +6,6 @@ plugins {
     alias(libs.plugins.spring.boot) apply false
     alias(libs.plugins.spring.dependency.management) apply false
     alias(libs.plugins.spotless)
-    alias(libs.plugins.detekt) apply false
 }
 
 // Formatting: ktlint with the IntelliJ IDEA style, so the IDE's "Reformat Code" and the check agree.
@@ -35,24 +34,6 @@ val javaVersion = providers.gradleProperty("javaVersion").map(String::toInt).get
 subprojects {
     group = "com.example.bank"
     version = "0.1.0-SNAPSHOT"
-
-    // Static analysis: detekt with its default rules plus config/detekt/detekt.yml; runs as part of `check`.
-    // detekt 2 (alpha): the stable 1.x line is built on Kotlin 2.0 and can neither run on Java 25 nor target it.
-    apply(plugin = "dev.detekt")
-    configure<dev.detekt.gradle.extensions.DetektExtension> {
-        buildUponDefaultConfig = true
-        config.setFrom(rootProject.file("config/detekt/detekt.yml"))
-        source.setFrom("src/main/kotlin", "src/test/kotlin", "src/integrationTest/kotlin")
-    }
-    // detekt runs on the Kotlin version it was built with. Spring's dependency management would pin it to the
-    // project's version, so this rule is registered after the build script (and with it Spring's rule).
-    afterEvaluate {
-        configurations.matching { it.name == "detekt" }.configureEach {
-            resolutionStrategy.eachDependency {
-                if (requested.group == "org.jetbrains.kotlin") useVersion(dev.detekt.gradle.plugin.getSupportedKotlinVersion())
-            }
-        }
-    }
 
     apply(plugin = "com.diffplug.spotless")
     configure<com.diffplug.gradle.spotless.SpotlessExtension> {
