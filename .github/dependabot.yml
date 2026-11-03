@@ -1,0 +1,37 @@
+# Dependency updates as pull requests; CI checks each one before it is merged.
+# Minor and patch updates are grouped into one pull request per ecosystem, major updates come one by one.
+version: 2
+updates:
+  - package-ecosystem: gradle          # gradle/libs.versions.toml, build files and the wrapper
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      gradle-minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      github-actions:
+        patterns: ["*"]
+
+  - package-ecosystem: docker-compose  # images in compose.yaml, one pull request per image
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+
+  # The browser telemetry bundle is vendored: after merging an update, it must be rebuilt (see CONTRIBUTING.md).
+  # CI fails until the committed bundle matches package-lock.json.
+  - package-ecosystem: npm
+    directory: /bank-service/src/main/ui-telemetry
+    schedule:
+      interval: monthly
+    groups:
+      browser-telemetry:
+        update-types: [minor, patch]

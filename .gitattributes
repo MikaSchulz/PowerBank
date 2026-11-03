@@ -1,0 +1,12 @@
+# Line endings: LF in the repository and in working copies, except for Windows scripts.
+* text=auto eol=lf
+/gradlew text eol=lf
+*.bat text eol=crlf
+
+# Binary files are never touched
+*.jar binary
+*.png binary
+
+# Generated files: collapsed in GitHub diffs and left out of the language statistics
+bank-service/src/main/resources/static/vendor/otel-web.js linguist-generated=true
+bank-service/src/main/ui-telemetry/package-lock.json linguist-generated=true
