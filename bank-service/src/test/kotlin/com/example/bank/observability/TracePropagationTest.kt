@@ -178,6 +178,19 @@ class TracePropagationTest @Autowired constructor(
         assertEquals(emptyList(), spanNames(traceId))
     }
 
+    @Test
+    fun `the browser's own telemetry passing through the proxy is not traced again`() {
+        val traceId = newTraceId()
+
+        mvc.post("/api/otel/v1/traces") {
+            contentType = MediaType.APPLICATION_JSON
+            header("traceparent", "00-$traceId-00f067aa0ba902b7-01")
+            content = """{"resourceSpans":[]}"""
+        }
+
+        assertEquals(emptyList(), spanNames(traceId))
+    }
+
     // --- helpers ---
 
     private fun newTraceId() = Random.nextBytes(16).joinToString("") { "%02x".format(it) }

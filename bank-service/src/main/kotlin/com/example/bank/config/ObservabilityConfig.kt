@@ -22,10 +22,12 @@ class ObservabilityConfig {
 
     /**
      * Only API requests become traces (and `http.server.requests` metrics): the UI's static files and actuator calls
-     * would otherwise fill Tempo with noise. Everything Temporal or the ledger does is unaffected.
+     * would otherwise fill Tempo with noise, and the browser's own telemetry (`/api/otel/`) must not trace itself.
+     * Everything Temporal or the ledger does is unaffected.
      */
     @Bean
     fun traceOnlyApiRequests() = ObservationPredicate { _, context ->
-        context !is ServerRequestObservationContext || context.carrier?.requestURI?.startsWith("/api/") ?: true
+        val path = (context as? ServerRequestObservationContext)?.carrier?.requestURI
+        path == null || (path.startsWith("/api/") && !path.startsWith("/api/otel/"))
     }
 }

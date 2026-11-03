@@ -1,7 +1,10 @@
 // PowerBank UI: plain ES module, no build step. Talks to the bank-service REST API on the same origin.
 
-const TEMPORAL_UI = 'http://localhost:8233';
-const GRAFANA = 'http://localhost:3000';
+import { action as traced, initTelemetry, startRequest } from './telemetry.js';
+
+// Overridden from /api/ui-config at startup (bank.ui.* properties), so nothing is tied to localhost.
+let TEMPORAL_UI = 'http://localhost:8233';
+let GRAFANA = 'http://localhost:3000';
 const CASH = '00000000-0000-0000-0000-000000000001';
 const CLEARING = '00000000-0000-0000-0000-000000000002';
 const POLL_MS = 1500;
@@ -126,19 +129,8 @@ function label(id) {
 }
 
 // ---------- W3C trace context ----------
-
-const randomHex = (bytes) => [...crypto.getRandomValues(new Uint8Array(bytes))].map((b) => b.toString(16).padStart(2, '0')).join('');
-
-/**
- * Every user action starts its own trace: the browser sends a W3C `traceparent` header
- * (version 00, 16-byte trace ID, 8-byte parent span ID, flags). Flag 01 = sampled, so the backend records the trace
- * and Temporal carries it into the workflow. Polling sends flag 00 (not sampled) to keep Tempo free of noise.
- */
-function traceparent(sampled) {
-  let traceId = randomHex(16);
-  while (/^0+$/.test(traceId)) traceId = randomHex(16);
-  return `00-${traceId}-${randomHex(8)}-${sampled ? '01' : '00'}`;
-}
+// Every user action is the root span of its own trace (telemetry.js); its API calls send a W3C `traceparent`
+// that the backend and Temporal continue. Polling sends an unsampled traceparent to keep Tempo free of noise.
 
 function grafanaTraceUrl(traceId, fromIso, toIso) {
   const from = fromIso ? Date.parse(fromIso) - 5 * 60_000 : 'now-24h';
@@ -170,20 +162,24 @@ const accountTraceQl = (id) =>
 
 // ---------- API ----------
 
-async function api(method, path, body, { sampled = true } = {}) {
+/** `span`: the user action this call belongs to (its client span becomes a child); `sampled: false` for polling. */
+async function api(method, path, body, { sampled = true, span = null } = {}) {
+  const request = startRequest(span, method, path, { sampled });
   try {
-    const headers = { traceparent: traceparent(sampled) };
+    const headers = { ...request.headers };
     if (body !== undefined) headers['Content-Type'] = 'application/json';
     const response = await fetch(path, {
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
     });
+    request.end(response.status);
     const text = await response.text();
     let data = null;
     if (text) { try { data = JSON.parse(text); } catch { data = text; } }
     return { ok: response.ok, status: response.status, data };
   } catch (error) {
+    request.end(0);
     return { ok: false, status: 0, data: { detail: 'Backend not reachable. Is bank-service running?' } };
   }
 }
@@ -647,8 +643,8 @@ function readForm() {
   return { path: '/api/transfers', body };
 }
 
-async function submitTransfer(path, body, { open = true } = {}) {
-  const result = await api('POST', path, body);
+async function submitTransfer(path, body, { open = true, span = null } = {}) {
+  const result = await api('POST', path, body, { span });
   if (result.ok) {
     if (result.data.traceId) state.traceIds.set(result.data.transferId, result.data.traceId);
     if (open) openDrawer('transfer', result.data.transferId);
@@ -663,7 +659,9 @@ async function onSubmit(event) {
   if (request.error) { toast('Check the form', esc(request.error), 'warn'); return; }
   const button = $('#transfer-form button[type="submit"]');
   button.disabled = true;
-  const result = await submitTransfer(request.path, request.body);
+  const name = state.mode === 'deposit' ? 'deposit' : 'send transfer';
+  const result = await traced(name, { 'bank.transfer.kind': state.mode.toUpperCase() },
+    (span) => submitTransfer(request.path, request.body, { span }));
   button.disabled = false;
   if (result.ok) {
     toast('Transfer accepted', `Workflow <code>transfer-${short(result.data.transferId)}…</code> started`, 'ok');
@@ -705,37 +703,41 @@ async function runScenario(name, button) {
 
   button.disabled = true;
   try {
-    if (name === 'limit') {
-      const amountCents = external ? 6_000_00 : 15_000_00;
-      const r = await submitTransfer('/api/transfers', { debtorAccountId: debtor.id, amountCents, ...target() });
-      toast(r.ok ? 'Waiting for approval' : 'Error', r.ok ? 'Approve or deny it in the banner or the drawer.' : esc(problem(r)), r.ok ? 'warn' : 'bad');
-    } else if (name === 'insufficient') {
-      const amountCents = Math.max(available, 0) + 100;
-      const r = await submitTransfer('/api/transfers', { debtorAccountId: debtor.id, amountCents, ...target() });
-      if (!r.ok) toast('Error', esc(problem(r)), 'bad');
-    } else if (name === 'rejected') {
-      const r = await submitTransfer('/api/transfers', { debtorAccountId: debtor.id, amountCents: 25_00, ...target() });
-      toast(r.ok ? 'Sent to a closed account' : 'Error', r.ok ? 'Watch the saga: debit → external bank → refund.' : esc(problem(r)), r.ok ? 'info' : 'bad');
-    } else if (name === 'duplicate') {
-      const body = { transferId: uuid(), debtorAccountId: debtor.id, amountCents: 1_00, ...target() };
-      const first = await submitTransfer('/api/transfers', body);
-      const second = await api('POST', '/api/transfers', body);
-      toast('Duplicate submission',
-        `First: <strong>${first.status}</strong> · second: <strong>${second.status}</strong> ${second.status === 409 ? '(rejected, as expected)' : ''}<br>${esc(second.ok ? '' : problem(second))}`,
-        second.status === 409 ? 'ok' : 'bad');
-    } else if (name === 'burst') {
-      const amountCents = Math.max(100, Math.ceil(Math.max(available, 0) / 4));
-      const results = await Promise.all(Array.from({ length: 10 }, () =>
-        api('POST', '/api/transfers', { debtorAccountId: debtor.id, amountCents, ...target() })));
-      const accepted = results.filter((r) => r.ok).length;
-      toast(`Burst: ${accepted} of 10 accepted`,
-        `Each ${esc(money(amountCents))} from ${esc(label(debtor.id))} (available ${esc(money(available))}). At most ${Math.floor(Math.max(available, 0) / amountCents)} can be booked; watch the rest get "Insufficient funds".`,
-        'info');
-      state.filter = 'all';
-      refresh();
-    }
+    await traced(`scenario: ${name}`, { 'bank.scenario': name }, (span) => runScenarioSteps(name, { debtor, external, available, target, span }));
   } finally {
     button.disabled = false;
+  }
+}
+
+async function runScenarioSteps(name, { debtor, external, available, target, span }) {
+  if (name === 'limit') {
+    const amountCents = external ? 6_000_00 : 15_000_00;
+    const r = await submitTransfer('/api/transfers', { debtorAccountId: debtor.id, amountCents, ...target() }, { span });
+    toast(r.ok ? 'Waiting for approval' : 'Error', r.ok ? 'Approve or deny it in the banner or the drawer.' : esc(problem(r)), r.ok ? 'warn' : 'bad');
+  } else if (name === 'insufficient') {
+    const amountCents = Math.max(available, 0) + 100;
+    const r = await submitTransfer('/api/transfers', { debtorAccountId: debtor.id, amountCents, ...target() }, { span });
+    if (!r.ok) toast('Error', esc(problem(r)), 'bad');
+  } else if (name === 'rejected') {
+    const r = await submitTransfer('/api/transfers', { debtorAccountId: debtor.id, amountCents: 25_00, ...target() }, { span });
+    toast(r.ok ? 'Sent to a closed account' : 'Error', r.ok ? 'Watch the saga: debit → external bank → refund.' : esc(problem(r)), r.ok ? 'info' : 'bad');
+  } else if (name === 'duplicate') {
+    const body = { transferId: uuid(), debtorAccountId: debtor.id, amountCents: 1_00, ...target() };
+    const first = await submitTransfer('/api/transfers', body, { span });
+    const second = await api('POST', '/api/transfers', body, { span });
+    toast('Duplicate submission',
+      `First: <strong>${first.status}</strong> · second: <strong>${second.status}</strong> ${second.status === 409 ? '(rejected, as expected)' : ''}<br>${esc(second.ok ? '' : problem(second))}`,
+      second.status === 409 ? 'ok' : 'bad');
+  } else if (name === 'burst') {
+    const amountCents = Math.max(100, Math.ceil(Math.max(available, 0) / 4));
+    const results = await Promise.all(Array.from({ length: 10 }, () =>
+      api('POST', '/api/transfers', { debtorAccountId: debtor.id, amountCents, ...target() }, { span })));
+    const accepted = results.filter((r) => r.ok).length;
+    toast(`Burst: ${accepted} of 10 accepted`,
+      `Each ${esc(money(amountCents))} from ${esc(label(debtor.id))} (available ${esc(money(available))}). At most ${Math.floor(Math.max(available, 0) / amountCents)} can be booked; watch the rest get "Insufficient funds".`,
+      'info');
+    state.filter = 'all';
+    refresh();
   }
 }
 
@@ -745,19 +747,21 @@ async function quickStart(button) {
     { name: 'Alice', overdraft: 200_00, deposit: 1_000_00 },
     { name: 'Bob', overdraft: 0, deposit: 250_00 },
   ];
-  for (const person of people) {
-    await createAccount(person.name, person.overdraft, person.deposit, false);
-  }
+  await traced('quick start', {}, async (span) => {
+    for (const person of people) {
+      await createAccount(person.name, person.overdraft, person.deposit, false, span);
+    }
+  });
   toast('Alice and Bob are ready', 'Deposits run through the TransferWorkflow, balances appear in a moment.', 'ok');
   refresh();
 }
 
-async function createAccount(nickname, overdraftCents, depositCents, notify = true) {
-  const created = await api('POST', '/api/accounts', { overdraftLimitCents: overdraftCents || 0 });
+async function createAccount(nickname, overdraftCents, depositCents, notify = true, span = null) {
+  const created = await api('POST', '/api/accounts', { overdraftLimitCents: overdraftCents || 0 }, { span });
   if (!created.ok) { toast('Could not create account', esc(problem(created)), 'bad'); return; }
   if (nickname) setNickname(created.data.id, nickname);
   if (depositCents > 0) {
-    const deposit = await api('POST', `/api/accounts/${created.data.id}/deposits`, { amountCents: depositCents });
+    const deposit = await api('POST', `/api/accounts/${created.data.id}/deposits`, { amountCents: depositCents }, { span });
     if (!deposit.ok) toast('Deposit failed', esc(problem(deposit)), 'bad');
   }
   if (notify) toast('Account opened', esc(label(created.data.id)), 'ok');
@@ -767,7 +771,8 @@ async function createAccount(nickname, overdraftCents, depositCents, notify = tr
 // ---------- approvals ----------
 
 async function decide(id, approved, comment) {
-  const result = await api('POST', `/api/transfers/${id}/approval`, { approved, comment: comment || undefined });
+  const result = await traced(approved ? 'approve transfer' : 'deny transfer', { 'bank.transfer.id': id },
+    (span) => api('POST', `/api/transfers/${id}/approval`, { approved, comment: comment || undefined }, { span }));
   if (result.ok) {
     toast(approved ? 'Approved' : 'Denied', `Update accepted, workflow is now <strong>${esc(STATUS[result.data.status]?.label || result.data.status)}</strong>`, approved ? 'ok' : 'warn');
   } else {
@@ -818,7 +823,7 @@ async function saveSimulator() {
     minDelayMs: Math.round(Number(form.minDelay.value) * 1000),
     maxDelayMs: Math.round(Number(form.maxDelay.value) * 1000),
   };
-  const result = await api('PUT', '/api/simulator/external-bank', settings);
+  const result = await traced('update simulator', {}, (span) => api('PUT', '/api/simulator/external-bank', settings, { span }));
   if (result.ok) {
     toast('Simulator updated',
       `${Math.round(settings.rejectionRate * 100)} % rejections, ${Math.round(settings.failureRate * 100)} % technical failures, ${settings.minDelayMs / 1000}–${settings.maxDelayMs / 1000} s delay`, 'ok');
@@ -860,14 +865,16 @@ function bindEvents() {
     const overdraft = parseCents(form.overdraft.value) || 0;
     const deposit = parseCents(form.deposit.value) || 0;
     if (Number.isNaN(overdraft) || Number.isNaN(deposit)) { toast('Invalid amount', '', 'warn'); return; }
-    createAccount(form.nickname.value.trim(), overdraft, deposit);
+    traced('open account', {}, (span) => createAccount(form.nickname.value.trim(), overdraft, deposit, true, span));
   });
   $('#deposit-dialog').addEventListener('close', async () => {
     const dialog = $('#deposit-dialog');
     if (dialog.returnValue !== 'deposit' || !state.depositTarget) return;
     const amountCents = parseCents($('form', dialog).amount.value);
     if (!amountCents || Number.isNaN(amountCents)) { toast('Invalid amount', '', 'warn'); return; }
-    const result = await submitTransfer(`/api/accounts/${state.depositTarget}/deposits`, { amountCents }, { open: false });
+    const target = state.depositTarget;
+    const result = await traced('deposit', { 'bank.account.id': target },
+      (span) => submitTransfer(`/api/accounts/${target}/deposits`, { amountCents }, { open: false, span }));
     toast(result.ok ? 'Deposit started' : 'Deposit failed', result.ok ? esc(money(amountCents)) : esc(problem(result)), result.ok ? 'ok' : 'bad');
   });
   $('#rename-dialog').addEventListener('close', () => {
@@ -920,7 +927,8 @@ function bindEvents() {
       }
       case 'block':
       case 'unblock': {
-        const result = await api('POST', `/api/accounts/${id}/${action}`);
+        const result = await traced(`${action} account`, { 'bank.account.id': id },
+          (span) => api('POST', `/api/accounts/${id}/${action}`, undefined, { span }));
         toast(result.ok ? (action === 'block' ? 'Account blocked' : 'Account unblocked') : 'Not possible', result.ok ? '' : esc(problem(result)), result.ok ? 'ok' : 'bad');
         refresh();
         break;
@@ -940,7 +948,24 @@ function bindEvents() {
   });
 }
 
-bindEvents();
-setMode('internal');
-refresh();
-setInterval(refresh, POLL_MS);
+/** Links and telemetry settings from the backend (bank.ui.* properties). */
+async function loadConfig() {
+  const result = await api('GET', '/api/ui-config', undefined, { sampled: false });
+  if (!result.ok) return { browserTelemetry: false };
+  GRAFANA = result.data.grafanaUrl;
+  TEMPORAL_UI = result.data.temporalUiUrl;
+  $('#temporal-link').href = TEMPORAL_UI;
+  $('#grafana-link').href = GRAFANA;
+  return result.data;
+}
+
+async function start() {
+  bindEvents();
+  setMode('internal');
+  const config = await loadConfig();
+  await initTelemetry({ enabled: config.browserTelemetry });
+  refresh();
+  setInterval(refresh, POLL_MS);
+}
+
+start();
