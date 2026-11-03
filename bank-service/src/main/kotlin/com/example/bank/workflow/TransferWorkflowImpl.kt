@@ -64,7 +64,7 @@ class TransferWorkflowImpl : TransferWorkflow {
     override fun transfer(request: TransferRequest): TransferState {
         val external = request.creditorIban != null
         state = TransferState(request.transferId, TransferStatus.RECEIVED, request.amountCents, external)
-        log.info("Transfer {} received: {} cents, external={}", request.transferId, request.amountCents, external)
+        log.info("Transfer {} received, external={}", request.transferId, external) // no amount: logs are for operations
 
         val result = process(request, external)
         recordOutcome(result)
