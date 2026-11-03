@@ -153,6 +153,21 @@ function grafanaTraceUrl(traceId, fromIso, toIso) {
   return `${GRAFANA}/explore?schemaVersion=1&orgId=1&panes=${encodeURIComponent(JSON.stringify(panes))}`;
 }
 
+/** Grafana Explore with a TraceQL search, e.g. all traces of one account over the last day. */
+function grafanaSearchUrl(traceql) {
+  const panes = {
+    a: {
+      datasource: 'tempo',
+      queries: [{ refId: 'A', datasource: { type: 'tempo', uid: 'tempo' }, queryType: 'traceql', query: traceql, limit: 50, tableType: 'traces' }],
+      range: { from: 'now-24h', to: 'now' },
+    },
+  };
+  return `${GRAFANA}/explore?schemaVersion=1&orgId=1&panes=${encodeURIComponent(JSON.stringify(panes))}`;
+}
+
+const accountTraceQl = (id) =>
+  `{ span.bank.account.id = "${id}" || span.bank.debtor.account.id = "${id}" || span.bank.creditor.account.id = "${id}" }`;
+
 // ---------- API ----------
 
 async function api(method, path, body, { sampled = true } = {}) {
@@ -582,6 +597,8 @@ function accountDetails(id) {
           : account.status === 'OPEN' ? `<button class="btn ghost" data-action="block" data-id="${id}">Block</button>` : ''}
         <button class="btn ghost" data-action="rename" data-id="${id}">Rename</button>`}
       <button class="btn ghost" data-action="filter-account" data-id="${id}">Show transfers</button>
+      <a class="btn ghost" href="${grafanaSearchUrl(accountTraceQl(id))}" target="_blank" rel="noopener">Traces in Grafana
+        <svg viewBox="0 0 24 24"><path d="M7 17 17 7M9 7h8v8"/></svg></a>
     </div>
     ${system ? '' : `<p class="hint">Blocked accounts can still receive money, but every debit is rejected by the decider.</p>`}
     <div class="d-section">

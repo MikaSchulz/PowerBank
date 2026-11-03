@@ -1,6 +1,7 @@
 package com.example.bank.api
 
 import com.example.bank.domain.TransferId
+import com.example.bank.observability.BankSpans
 import com.example.bank.ledger.SystemAccounts
 import com.example.bank.ledger.TransferDetails
 import com.example.bank.ledger.TransferKind
@@ -53,14 +54,21 @@ class TransferService(
      */
     fun start(request: TransferRequest): String? {
         val traceId = currentTraceId()
+        val kind = when {
+            request.creditorIban != null -> TransferKind.EXTERNAL
+            request.debtorAccountId == SystemAccounts.CASH.value -> TransferKind.DEPOSIT
+            else -> TransferKind.INTERNAL
+        }
+        BankSpans.tag(
+            BankSpans.TRANSFER_ID to request.transferId,
+            BankSpans.TRANSFER_KIND to kind,
+            BankSpans.DEBTOR_ACCOUNT_ID to request.debtorAccountId,
+            BankSpans.CREDITOR_ACCOUNT_ID to request.creditorAccountId,
+        )
         records.register(
             TransferDetails(
                 id = request.transferId,
-                kind = when {
-                    request.creditorIban != null -> TransferKind.EXTERNAL
-                    request.debtorAccountId == SystemAccounts.CASH.value -> TransferKind.DEPOSIT
-                    else -> TransferKind.INTERNAL
-                },
+                kind = kind,
                 debtorAccountId = request.debtorAccountId,
                 creditorAccountId = request.creditorAccountId,
                 amountCents = request.amountCents,
@@ -126,6 +134,7 @@ class TransferService(
 
     /** Synchronous update: returns as soon as the workflow has taken over the decision. */
     fun approve(transferId: UUID, decision: ApprovalDecision): TransferState = try {
+        BankSpans.tag(BankSpans.TRANSFER_ID to transferId)
         stub(transferId).approve(decision)
     } catch (e: WorkflowNotFoundException) {
         // Completed workflows don't accept updates either.

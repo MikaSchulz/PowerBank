@@ -26,6 +26,7 @@ import com.fraktalio.fmodel.application.EventSourcingAggregate
 import com.fraktalio.fmodel.application.handle
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
+import com.example.bank.observability.BankSpans
 import io.micrometer.observation.Observation
 import io.micrometer.observation.ObservationRegistry
 import org.springframework.jdbc.core.simple.JdbcClient
@@ -170,7 +171,9 @@ class Ledger(
      */
     private fun lockInOrder(first: AccountId, second: AccountId) {
         // Observed as span and timer "bank.ledger.lock": under contention (e.g. the burst scenario) the wait is visible.
-        Observation.createNotStarted("bank.ledger.lock", observations).observe(
+        Observation.createNotStarted("bank.ledger.lock", observations)
+            .highCardinalityKeyValue(BankSpans.ACCOUNT_IDS, listOf(first, second).sortedBy { it.value }.joinToString(","))
+            .observe(
             Runnable {
                 jdbc.sql("SELECT id FROM accounts WHERE id IN (:ids) ORDER BY id FOR UPDATE")
                     .param("ids", listOf(first.value, second.value))
@@ -194,8 +197,18 @@ class Ledger(
         checkNotNull(
             Observation.createNotStarted("bank.account.command", observations)
                 .lowCardinalityKeyValue("command", command::class.simpleName ?: "unknown")
+                .highCardinalityKeyValue(BankSpans.ACCOUNT_ID, command.accountId.toString())
+                .highCardinalityKeyValue(BankSpans.TRANSFER_ID, transferIdOf(command))
                 .observe(Supplier { runBlocking { aggregate.handle(command).toList() } }),
         )
+
+    private fun transferIdOf(command: AccountCommand): String = when (command) {
+        is Debit -> command.transferId.toString()
+        is Credit -> command.transferId.toString()
+        is ReverseDebit -> command.transferId.toString()
+        is ReverseCredit -> command.transferId.toString()
+        else -> "none"
+    }
 
     private fun <T> inTransaction(block: () -> T): T = tx.execute { block() }
 

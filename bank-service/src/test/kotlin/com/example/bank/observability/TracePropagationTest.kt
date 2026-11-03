@@ -5,7 +5,9 @@ import com.example.bank.workflow.TransferState
 import com.example.bank.workflow.TransferStatus
 import com.example.bank.workflow.transferWorkflowId
 import com.jayway.jsonpath.JsonPath
+import io.opentelemetry.api.common.AttributeKey
 import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter
+import io.opentelemetry.sdk.trace.data.SpanData
 import io.opentelemetry.sdk.trace.SdkTracerProvider
 import io.temporal.client.WorkflowClient
 import org.junit.jupiter.api.Test
@@ -123,6 +125,50 @@ class TracePropagationTest @Autowired constructor(
     }
 
     @Test
+    fun `traces carry business IDs and can be searched by transfer and account`() {
+        val (alice, bob) = fundedAccounts()
+        val traceId = newTraceId()
+        val transferId = postTransfer(
+            """{"debtorAccountId":"$alice","creditorAccountId":"$bob","amountCents":700}""",
+            traceparent = "00-$traceId-00f067aa0ba902b7-01",
+            expectedTraceId = traceId,
+        )
+        awaitResult(transferId)
+        val spans = spans(traceId)
+
+        val http = spans.single { it.name.startsWith("http post") }
+        assertEquals(transferId.toString(), http.attr("bank.transfer.id"))
+        assertEquals("INTERNAL", http.attr("bank.transfer.kind"))
+        assertEquals(alice.toString(), http.attr("bank.debtor.account.id"))
+        assertEquals(bob.toString(), http.attr("bank.creditor.account.id"))
+
+        assertEquals(transferId.toString(), spans.single { it.name == "RunActivity:LedgerBookInternalTransfer" }.attr("bank.transfer.id"))
+
+        // Every booking touching an account has a command span with that account: { span.bank.account.id = "<id>" }
+        val commands = spans.filter { it.name == "bank.account.command" }
+        assertEquals(setOf(alice.toString(), bob.toString()), commands.map { it.attr("bank.account.id") }.toSet())
+        assertTrue(commands.all { it.attr("bank.transfer.id") == transferId.toString() })
+        assertEquals(listOf(alice, bob).sorted().joinToString(","), spans.single { it.name == "bank.ledger.lock" }.attr("bank.account.ids"))
+    }
+
+    @Test
+    fun `the external bank call is its own span with outcome and attempt`() {
+        val (alice, _) = fundedAccounts()
+        val traceId = newTraceId()
+        val transferId = postTransfer(
+            """{"debtorAccountId":"$alice","creditorIban":"DE89370400440532013000","amountCents":2500}""",
+            traceparent = "00-$traceId-00f067aa0ba902b7-01",
+            expectedTraceId = traceId,
+        )
+        assertEquals(TransferStatus.COMPLETED, awaitResult(transferId).status)
+
+        val call = spans(traceId).single { it.name == "bank.external-bank.call" }
+        assertEquals("accepted", call.attr("outcome"))
+        assertEquals(transferId.toString(), call.attr("bank.transfer.id"))
+        assertEquals("1", call.attr("temporal.activity.attempt"))
+    }
+
+    @Test
     fun `static UI files are not traced`() {
         val traceId = newTraceId()
 
@@ -136,10 +182,14 @@ class TracePropagationTest @Autowired constructor(
 
     private fun newTraceId() = Random.nextBytes(16).joinToString("") { "%02x".format(it) }
 
-    private fun spanNames(traceId: String): List<String> {
+    private fun spans(traceId: String): List<SpanData> {
         tracerProvider.forceFlush().join(10, TimeUnit.SECONDS)
-        return exporter.finishedSpanItems.filter { it.traceId == traceId }.map { it.name }
+        return exporter.finishedSpanItems.filter { it.traceId == traceId }
     }
+
+    private fun spanNames(traceId: String): List<String> = spans(traceId).map { it.name }
+
+    private fun SpanData.attr(key: String): String? = attributes.get(AttributeKey.stringKey(key))
 
     private fun fundedAccounts(): Pair<UUID, UUID> {
         val alice = openAccount()
