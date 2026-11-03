@@ -1,0 +1,63 @@
+# Using the bank
+
+## UI
+
+Open **http://localhost:8080** once the app is running. The UI is a plain HTML/JS page served by the bank-service
+(`bank-service/src/main/resources/static`), no build step.
+
+- **Accounts:** open accounts, deposit, block and unblock, see every posting with the running balance.
+  Nicknames like "Alice" only live in your browser (localStorage): the bank itself only knows pseudonymous IDs.
+- **Transfers:** internal, to an external bank, or as a cash deposit. Each one opens a drawer with the live workflow
+  status, an explanation of what Temporal is doing right now, the postings it created and a link to the Temporal UI.
+- **Approvals:** transfers above the limit show up in a banner; approve or deny them via the `approve` update.
+- **Scenarios:** one click each: above the approval limit, insufficient funds, external bank rejects (saga refund),
+  duplicate submission (409), and a burst of 10 concurrent transfers that shows the row locks at work.
+- **Simulator:** change the external bank's rejection rate, technical failure rate and delay at runtime.
+  "Bank down" makes every call fail, so you can watch Temporal retry and, after 10 minutes, refund.
+- **Ledger health:** the header shows the sum of all postings. With double-entry bookkeeping it must always be zero.
+
+## Manual test checklist
+
+1. **Quick start** creates Alice (1,000 €, 200 € overdraft) and Bob (250 €).
+2. Send a normal internal transfer and watch it go from *Received* to *Booked*.
+3. Run every scenario once and check the result in the drawer and the ledger health badge.
+4. Open the simulator, choose **Bank down**, send an external transfer, then switch back to **Default**:
+   the pending retries succeed without losing anything.
+5. Kill the app (`Ctrl+C`) while an external transfer is *At external bank*, start it again:
+   the workflow continues where it stopped.
+6. Block Alice, try to send money from her account (rejected), unblock her again.
+
+## API with curl
+
+```bash
+# Open an account (no application process until stage 7) and deposit 1,000 €
+curl -s -X POST localhost:8080/api/accounts -H 'Content-Type: application/json' -d '{}'
+curl -s -X POST localhost:8080/api/accounts/<account>/deposits -H 'Content-Type: application/json' -d '{"amountCents":100000}'
+
+# Internal transfer; the transferId protects against duplicate submission (second POST → 409)
+curl -s -X POST localhost:8080/api/transfers -H 'Content-Type: application/json' \
+  -d '{"transferId":"<uuid>","debtorAccountId":"<account>","creditorAccountId":"<account2>","amountCents":2500}'
+
+# Transfer to an external bank (saga). The simulator always rejects IBANs ending in 000000.
+curl -s -X POST localhost:8080/api/transfers -H 'Content-Type: application/json' \
+  -d '{"debtorAccountId":"<account>","creditorIban":"DE89 3704 0044 0532 0130 00","amountCents":4000}'
+
+# Status (query) and approval on suspected fraud (update): from 10,000 € internally, 5,000 € to external banks
+curl -s localhost:8080/api/transfers/<transferId>
+curl -s -X POST localhost:8080/api/transfers/<transferId>/approval -H 'Content-Type: application/json' -d '{"approved":true}'
+
+# Balance and postings
+curl -s localhost:8080/api/accounts/<account>
+curl -s localhost:8080/api/accounts/<account>/postings
+```
+
+More endpoints:
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/accounts` | all accounts with balances (customer and system) |
+| `POST` | `/api/accounts/{id}/block`, `/unblock` | block or unblock an account |
+| `GET` | `/api/transfers?accountId=&limit=` | transfers, newest first, with live status for those in flight |
+| `GET` | `/api/transfers/{id}/postings` | the postings a transfer created |
+| `GET` | `/api/ledger/summary` | sum of all postings (must be 0), counts |
+| `GET`, `PUT` | `/api/simulator/external-bank` | external bank simulator settings |
