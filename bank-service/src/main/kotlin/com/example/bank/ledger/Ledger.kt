@@ -22,13 +22,13 @@ import com.example.bank.ledger.TransferRecordStatus.DEBITED
 import com.example.bank.ledger.TransferRecordStatus.PENDING
 import com.example.bank.ledger.TransferRecordStatus.REFUNDED
 import com.example.bank.ledger.TransferRecordStatus.REJECTED
+import com.example.bank.observability.BankSpans
 import com.fraktalio.fmodel.application.EventSourcingAggregate
 import com.fraktalio.fmodel.application.handle
-import kotlinx.coroutines.flow.toList
-import kotlinx.coroutines.runBlocking
-import com.example.bank.observability.BankSpans
 import io.micrometer.observation.Observation
 import io.micrometer.observation.ObservationRegistry
+import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.runBlocking
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.stereotype.Component
 import org.springframework.transaction.support.TransactionTemplate
@@ -174,13 +174,13 @@ class Ledger(
         Observation.createNotStarted("bank.ledger.lock", observations)
             .highCardinalityKeyValue(BankSpans.ACCOUNT_IDS, listOf(first, second).sortedBy { it.value }.joinToString(","))
             .observe(
-            Runnable {
-                jdbc.sql("SELECT id FROM accounts WHERE id IN (:ids) ORDER BY id FOR UPDATE")
-                    .param("ids", listOf(first.value, second.value))
-                    .query()
-                    .listOfRows()
-            },
-        )
+                Runnable {
+                    jdbc.sql("SELECT id FROM accounts WHERE id IN (:ids) ORDER BY id FOR UPDATE")
+                        .param("ids", listOf(first.value, second.value))
+                        .query()
+                        .listOfRows()
+                },
+            )
     }
 
     private fun debitOf(transferId: TransferId): Pair<AccountId, Long> =

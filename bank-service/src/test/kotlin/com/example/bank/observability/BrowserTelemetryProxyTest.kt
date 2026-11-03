@@ -39,7 +39,7 @@ class BrowserTelemetryProxyTest @Autowired constructor(private val mvc: MockMvc)
     @Test
     fun `each signal is forwarded unchanged to its endpoint`() {
         listOf("traces", "logs", "metrics").forEach { signal ->
-            val body = """{"resource${signal}":[]}""".toByteArray()
+            val body = """{"resource$signal":[]}""".toByteArray()
 
             mvc.post("/api/otel/v1/$signal") {
                 contentType = MediaType.APPLICATION_JSON
@@ -114,6 +114,7 @@ class BrowserTelemetryProxyTest @Autowired constructor(private val mvc: MockMvc)
         }
 
         val received = CopyOnWriteArrayList<Received>()
+
         @Volatile var status = 200
 
         private val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).apply {

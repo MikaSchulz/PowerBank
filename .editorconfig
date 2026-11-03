@@ -9,6 +9,9 @@ trim_trailing_whitespace = true
 indent_style = space
 indent_size = 4
 
+[*.{kt,kts}]
+max_line_length = 140   # the ktlint settings are in build.gradle.kts (spotless)
+
 [*.{yml,yaml,json,js,css,html,toml}]
 indent_size = 2
 

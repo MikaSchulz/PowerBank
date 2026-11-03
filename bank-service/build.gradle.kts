@@ -17,8 +17,8 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-actuator")
     implementation("org.flywaydb:flyway-database-postgresql")
     implementation("org.jetbrains.kotlin:kotlin-reflect")
-    implementation("tools.jackson.module:jackson-module-kotlin")          // Jackson 3: REST (Spring Boot 4)
-    implementation("com.fasterxml.jackson.module:jackson-module-kotlin")  // Jackson 2: Temporal payloads
+    implementation("tools.jackson.module:jackson-module-kotlin") // Jackson 3: REST (Spring Boot 4)
+    implementation("com.fasterxml.jackson.module:jackson-module-kotlin") // Jackson 2: Temporal payloads
 
     implementation(libs.temporal.starter)
     implementation(libs.temporal.kotlin)
@@ -26,10 +26,10 @@ dependencies {
 
     // Observability: traces, metrics and logs via OpenTelemetry (OTLP)
     implementation("org.springframework.boot:spring-boot-starter-opentelemetry")
-    implementation(libs.temporal.opentracing)                    // Temporal's tracing interceptors …
+    implementation(libs.temporal.opentracing) // Temporal's tracing interceptors …
     implementation("io.opentelemetry:opentelemetry-opentracing-shim") // … bridged to OpenTelemetry
-    implementation(libs.datasource.micrometer)                   // JDBC spans
-    implementation(libs.otel.logback.appender)                   // logs to OTLP
+    implementation(libs.datasource.micrometer) // JDBC spans
+    implementation(libs.otel.logback.appender) // logs to OTLP
 
     runtimeOnly("org.postgresql:postgresql")
 

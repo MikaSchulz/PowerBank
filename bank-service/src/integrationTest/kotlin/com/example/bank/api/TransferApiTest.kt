@@ -65,7 +65,10 @@ class TransferApiTest @Autowired constructor(
 
         postTransfer(body)
         awaitResult(transferId)
-        mvc.post("/api/transfers") { contentType = MediaType.APPLICATION_JSON; content = body }
+        mvc.post("/api/transfers") {
+            contentType = MediaType.APPLICATION_JSON
+            content = body
+        }
             .andExpect { status { isConflict() } }
 
         assertEquals(90_00, balance(alice))
@@ -79,9 +82,11 @@ class TransferApiTest @Autowired constructor(
         deposit(alice, 100_00)
         val pool = Executors.newFixedThreadPool(8)
 
-        val ids = pool.invokeAll((1..10).map {
-            Callable { postTransfer("""{"debtorAccountId":"$alice","creditorAccountId":"$bob","amountCents":3000}""") }
-        }).map { it.get() }
+        val ids = pool.invokeAll(
+            (1..10).map {
+                Callable { postTransfer("""{"debtorAccountId":"$alice","creditorAccountId":"$bob","amountCents":3000}""") }
+            },
+        ).map { it.get() }
         pool.shutdown()
         val results = ids.map { awaitResult(it) }
 
@@ -109,14 +114,20 @@ class TransferApiTest @Autowired constructor(
         deposit(alice, 100_00)
         val clearingBefore = balance(SystemAccounts.EXTERNAL_CLEARING.value)
 
-        val transferId = postTransfer("""{"debtorAccountId":"$alice","creditorIban":"${iban("DE", "370400440000000000")}","amountCents":4000}""")
+        val transferId =
+            postTransfer("""{"debtorAccountId":"$alice","creditorIban":"${iban("DE", "370400440000000000")}","amountCents":4000}""")
 
         val result = awaitResult(transferId)
         assertEquals(TransferStatus.REFUNDED, result.status)
         assertEquals("Creditor account closed", result.reason)
         assertEquals(100_00, balance(alice))
         assertEquals(clearingBefore, balance(SystemAccounts.EXTERNAL_CLEARING.value))
-        assertEquals(listOf("debit", "credit", "refund", "refund"), queries.postingsOfTransfer(com.example.bank.domain.TransferId(transferId)).map { it.leg })
+        assertEquals(
+            listOf("debit", "credit", "refund", "refund"),
+            queries.postingsOfTransfer(com.example.bank.domain.TransferId(transferId)).map {
+                it.leg
+            },
+        )
     }
 
     @Test
@@ -198,7 +209,10 @@ class TransferApiTest @Autowired constructor(
             """{"debtorAccountId":"$alice","creditorIban":"DE00 1234","amountCents":100}""",
             """{"debtorAccountId":"$alice","creditorIban":"DE88370400440532013000","amountCents":100}""",
         ).forEach { body ->
-            mvc.post("/api/transfers") { contentType = MediaType.APPLICATION_JSON; content = body }
+            mvc.post("/api/transfers") {
+                contentType = MediaType.APPLICATION_JSON
+                content = body
+            }
                 .andExpect { status { isBadRequest() } }
         }
     }
@@ -288,7 +302,10 @@ class TransferApiTest @Autowired constructor(
                 jsonPath("$.detail") { value("Rates must be between 0 and 1") }
             }
         } finally {
-            mvc.put("/api/simulator/external-bank") { contentType = MediaType.APPLICATION_JSON; content = original }
+            mvc.put("/api/simulator/external-bank") {
+                contentType = MediaType.APPLICATION_JSON
+                content = original
+            }
         }
     }
 
@@ -301,7 +318,10 @@ class TransferApiTest @Autowired constructor(
     // --- helpers ---
 
     private fun openAccount(): UUID {
-        val json = mvc.post("/api/accounts") { contentType = MediaType.APPLICATION_JSON; content = "{}" }
+        val json = mvc.post("/api/accounts") {
+            contentType = MediaType.APPLICATION_JSON
+            content = "{}"
+        }
             .andExpect { status { isCreated() } }
             .andReturn().response.contentAsString
         return UUID.fromString(JsonPath.read(json, "$.id"))
@@ -316,7 +336,10 @@ class TransferApiTest @Autowired constructor(
     }
 
     private fun postTransfer(body: String): UUID {
-        val json = mvc.post("/api/transfers") { contentType = MediaType.APPLICATION_JSON; content = body }
+        val json = mvc.post("/api/transfers") {
+            contentType = MediaType.APPLICATION_JSON
+            content = body
+        }
             .andExpect { status { isAccepted() } }
             .andReturn().response.contentAsString
         return UUID.fromString(JsonPath.read(json, "$.transferId"))

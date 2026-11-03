@@ -26,7 +26,7 @@ class ApiExceptionHandler {
         problem(HttpStatus.BAD_REQUEST, (e.mostSpecificCause as? IllegalArgumentException)?.message ?: "Malformed request body")
 
     @ExceptionHandler(WorkflowExecutionAlreadyStarted::class)
-    fun duplicate(e: WorkflowExecutionAlreadyStarted) =
+    fun duplicate() =
         problem(HttpStatus.CONFLICT, "A transfer with this transfer ID already exists")
 
     @ExceptionHandler(WorkflowNotFoundException::class, NotFoundException::class)

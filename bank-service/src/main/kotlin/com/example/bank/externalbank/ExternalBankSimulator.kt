@@ -9,6 +9,7 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ThreadLocalRandom
 
+@Suppress("MagicNumber") // defaults of the configuration properties, overridden in application.yml
 @ConfigurationProperties("bank.external-bank")
 data class ExternalBankProperties(
     val minDelay: Duration = Duration.ofSeconds(1),

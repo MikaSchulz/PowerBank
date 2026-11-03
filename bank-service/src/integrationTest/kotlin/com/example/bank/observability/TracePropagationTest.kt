@@ -7,8 +7,8 @@ import com.example.bank.workflow.transferWorkflowId
 import com.jayway.jsonpath.JsonPath
 import io.opentelemetry.api.common.AttributeKey
 import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter
-import io.opentelemetry.sdk.trace.data.SpanData
 import io.opentelemetry.sdk.trace.SdkTracerProvider
+import io.opentelemetry.sdk.trace.data.SpanData
 import io.temporal.client.WorkflowClient
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -200,7 +200,10 @@ class TracePropagationTest @Autowired constructor(
     }
 
     private fun openAccount(): UUID {
-        val json = mvc.post("/api/accounts") { contentType = MediaType.APPLICATION_JSON; content = "{}" }
+        val json = mvc.post("/api/accounts") {
+            contentType = MediaType.APPLICATION_JSON
+            content = "{}"
+        }
             .andReturn().response.contentAsString
         return UUID.fromString(JsonPath.read(json, "$.id"))
     }

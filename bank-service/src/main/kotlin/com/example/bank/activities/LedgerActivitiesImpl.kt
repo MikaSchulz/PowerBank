@@ -68,6 +68,6 @@ class LedgerActivitiesImpl(private val ledger: Ledger) : LedgerActivities {
     private fun <T> nonRetryableOnIllegalState(block: () -> T): T = try {
         block()
     } catch (e: IllegalTransferState) {
-        throw ApplicationFailure.newNonRetryableFailure(e.message, "IllegalTransferState")
+        throw ApplicationFailure.newNonRetryableFailureWithCause(e.message, "IllegalTransferState", e)
     }
 }
