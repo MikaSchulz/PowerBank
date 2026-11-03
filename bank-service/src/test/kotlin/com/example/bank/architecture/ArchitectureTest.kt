@@ -39,7 +39,12 @@ class ArchitectureTest {
     fun `the domain stays free of Spring, Temporal and the database`() {
         classes().that().resideInAPackage("com.example.bank.domain..")
             .should().onlyDependOnClassesThat().resideInAnyPackage(
-                "com.example.bank.domain..", "java..", "kotlin..", "kotlinx.coroutines..", "com.fraktalio..", "org.jetbrains.annotations..",
+                "com.example.bank.domain..",
+                "java..",
+                "kotlin..",
+                "kotlinx.coroutines..",
+                "com.fraktalio..",
+                "org.jetbrains.annotations..",
             )
             .because("business logic must be testable without infrastructure")
             .check(classes)

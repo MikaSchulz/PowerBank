@@ -252,7 +252,7 @@ class TransferWorkflowTest {
 
         override fun submitPayment(payment: ExternalPayment): ExternalBankAnswer {
             attempts++
-            if (attempts <= failuresBeforeSuccess) throw IllegalStateException("external bank unreachable")
+            if (attempts <= failuresBeforeSuccess) error("external bank unreachable")
             return answer
         }
     }

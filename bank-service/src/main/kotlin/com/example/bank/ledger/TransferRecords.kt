@@ -81,7 +81,12 @@ class TransferRecords(private val jdbc: JdbcClient) {
 
     /** Removes a registration whose workflow never started. Only possible while nothing has been booked. */
     fun discardIfPending(id: TransferId) {
-        jdbc.sql("DELETE FROM transfers t WHERE t.id = :id AND t.status = 'PENDING' AND NOT EXISTS (SELECT 1 FROM postings p WHERE p.transfer_id = t.id)")
+        jdbc.sql(
+            """
+            DELETE FROM transfers t
+            WHERE t.id = :id AND t.status = 'PENDING' AND NOT EXISTS (SELECT 1 FROM postings p WHERE p.transfer_id = t.id)
+            """,
+        )
             .param("id", id.value)
             .update()
     }
