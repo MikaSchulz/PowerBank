@@ -37,21 +37,19 @@ subprojects {
     version = "0.1.0-SNAPSHOT"
 
     // Static analysis: detekt with its default rules plus config/detekt/detekt.yml; runs as part of `check`.
-    apply(plugin = "io.gitlab.arturbosch.detekt")
-    configure<io.gitlab.arturbosch.detekt.extensions.DetektExtension> {
+    // detekt 2 (alpha): the stable 1.x line is built on Kotlin 2.0 and can neither run on Java 25 nor target it.
+    apply(plugin = "dev.detekt")
+    configure<dev.detekt.gradle.extensions.DetektExtension> {
         buildUponDefaultConfig = true
         config.setFrom(rootProject.file("config/detekt/detekt.yml"))
         source.setFrom("src/main/kotlin", "src/test/kotlin", "src/integrationTest/kotlin")
     }
-    // detekt's embedded Kotlin compiler only knows JVM targets up to 22; it analyzes source, so the target doesn't
-    // change the result. Without this, it takes the toolchain's (25) and fails.
-    tasks.withType<io.gitlab.arturbosch.detekt.Detekt>().configureEach { jvmTarget = "21" }
-    // detekt runs on the Kotlin version it was built with. Spring's dependency management would raise it to the
+    // detekt runs on the Kotlin version it was built with. Spring's dependency management would pin it to the
     // project's version, so this rule is registered after the build script (and with it Spring's rule).
     afterEvaluate {
         configurations.matching { it.name == "detekt" }.configureEach {
             resolutionStrategy.eachDependency {
-                if (requested.group == "org.jetbrains.kotlin") useVersion(io.gitlab.arturbosch.detekt.getSupportedKotlinVersion())
+                if (requested.group == "org.jetbrains.kotlin") useVersion(dev.detekt.gradle.plugin.getSupportedKotlinVersion())
             }
         }
     }
