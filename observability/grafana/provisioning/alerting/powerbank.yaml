@@ -282,3 +282,200 @@ groups:
           description: The log records carry the stack trace and, for failed actions, the trace ID of the action.
           __dashboardUid__: powerbank-overview
           __panelId__: "28"
+
+      # --- Infrastructure (observability/otel-collector) ---------------------------------------------------------
+
+      - uid: powerbank-temporal-server-down
+        title: Temporal server down
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: max(up{job="temporal-server"})
+              instant: true
+              range: false
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: lt, params: [1] }
+        noDataState: OK
+        execErrState: Error
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: The Temporal server doesn't answer.
+          description: >-
+            No transfer can be started, approved or finished while the Temporal server is down. Running transfers
+            continue once it is back (their state is on the temporal-data volume).
+          __dashboardUid__: powerbank-infrastructure
+          __panelId__: "2"
+
+      - uid: powerbank-task-queue-stuck
+        title: Nobody works on the bank task queue
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              # Measured by the server, so it also fires when the bank-service (the worker) is down completely.
+              expr: max by (task_type) (approximate_backlog_age_seconds{taskqueue="bank"})
+              instant: true
+              range: false
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [60] }
+        noDataState: OK
+        execErrState: Error
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.task_type }} tasks have been waiting in the bank task queue for {{ humanizeDuration $values.A.Value }}."
+          description: No worker picks them up. Is the bank-service running and connected to Temporal?
+          __dashboardUid__: powerbank-infrastructure
+          __panelId__: "5"
+
+      - uid: powerbank-temporal-persistence-errors
+        title: Temporal server can't reach its database
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              # Only real trouble: ConditionFailed (e.g. a duplicate start) and NotFound are part of normal operation.
+              expr: sum(increase(persistence_error_with_type_total{error_type=~".*(Unavailable|Timeout|DeadlineExceeded|Internal).*"}[5m]))
+              instant: true
+              range: false
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        labels:
+          severity: warning
+        annotations:
+          summary: The Temporal server had persistence errors in the last 5 minutes.
+          description: Check the Temporal server logs on the infrastructure dashboard.
+          __dashboardUid__: powerbank-infrastructure
+          __panelId__: "12"
+
+      - uid: powerbank-postgres-unreachable
+        title: Postgres unreachable
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              # The database size can only be read with a connection; the series disappears within a minute.
+              expr: (count(postgresql_db_size_bytes) > bool 0) or vector(0)
+              instant: true
+              range: false
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: lt, params: [1] }
+        noDataState: OK
+        execErrState: Error
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: The collector gets no metrics from Postgres.
+          description: >-
+            Postgres is down or refuses the connection. Without it, no booking is possible; Temporal retries the
+            activities until it is back.
+          __dashboardUid__: powerbank-infrastructure
+          __panelId__: "3"
+
+      - uid: powerbank-postgres-connections
+        title: Postgres connections almost used up
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: sum(postgresql_backends) / max(postgresql_connection_max)
+              instant: true
+              range: false
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0.8] }
+        noDataState: OK
+        execErrState: Error
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ humanizePercentage $values.A.Value }} of max_connections are in use."
+          description: New connections will be refused soon. Look for connection leaks or too large pools.
+          __dashboardUid__: powerbank-infrastructure
+          __panelId__: "6"
+
+      - uid: powerbank-postgres-deadlocks
+        title: Postgres deadlocks
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: sum(increase(postgresql_deadlocks_total[10m]))
+              instant: true
+              range: false
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        labels:
+          severity: warning
+        annotations:
+          summary: Postgres resolved a deadlock in the last 10 minutes.
+          description: >-
+            The ledger locks accounts sorted by ID to avoid deadlocks, so this points to a new code path that locks
+            in a different order. The Postgres log has the details.
+          __dashboardUid__: powerbank-infrastructure
+          __panelId__: "25"

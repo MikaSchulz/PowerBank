@@ -5,15 +5,55 @@ services:
       POSTGRES_DB: bank
       POSTGRES_USER: bank
       POSTGRES_PASSWORD: bank   # local only
+    # JSON logs into a file the collector reads (observability/otel-collector). They must not contain personal data:
+    # no statement parameters and no statement after errors. jsonlog still writes DETAIL (e.g. a failing row), so
+    # the collector passes on only a few safe fields. Slow statements (from 250 ms) and lock waits (from 1 s) are
+    # logged; the app's statements only have $1 placeholders. One file per weekday.
+    command:
+      - postgres
+      - -c
+      - logging_collector=on
+      - -c
+      - log_destination=jsonlog
+      - -c
+      - log_directory=/var/log/postgresql
+      - -c
+      - log_filename=postgresql-%a.log
+      - -c
+      - log_rotation_age=1d
+      - -c
+      - log_truncate_on_rotation=on
+      - -c
+      - log_file_mode=0644
+      - -c
+      - log_min_duration_statement=250
+      - -c
+      - log_lock_waits=on
+      - -c
+      - log_error_verbosity=terse
+      - -c
+      - log_min_error_statement=panic
+      - -c
+      - log_parameter_max_length=0
     ports: ["5432:5432"]
     volumes:
       - postgres-data:/var/lib/postgresql
+      - postgres-logs:/var/log/postgresql
   temporal:
     image: temporalio/temporal:latest
     # --db-filename: the dev server keeps workflows in SQLite on a volume instead of in memory, so running
     # transfers survive a restart. Ledger (Postgres) and workflows (Temporal) belong together: reset both at once
     # with `docker compose down -v`, never only one of them.
-    command: ["server", "start-dev", "--ip", "0.0.0.0", "--db-filename", "/home/temporal/temporal.db"]
+    # The server logs only to stdout; a pipe copies its JSON output to a file the collector reads. `exec` keeps the
+    # server as the main process, so it still shuts down cleanly on `docker compose stop`.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        mkdir -p /home/temporal/logs
+        rm -f /tmp/log.pipe && mkfifo /tmp/log.pipe
+        tee -a /home/temporal/logs/temporal.log < /tmp/log.pipe &
+        exec temporal server start-dev --ip 0.0.0.0 --db-filename /home/temporal/temporal.db \
+          --metrics-port 9233 --log-format json > /tmp/log.pipe 2>&1
     ports: ["7233:7233", "8233:8233"]
     volumes:
       - temporal-data:/home/temporal   # the image's user may only write here
@@ -24,13 +64,22 @@ services:
     ports: ["3000:3000", "4317:4317", "4318:4318"]
     environment:
       PROMETHEUS_EXTRA_ARGS: --enable-feature=created-timestamp-zero-ingestion
+      # Infrastructure telemetry: Temporal server and Postgres metrics and logs (observability/otel-collector)
+      OTELCOL_EXTRA_ARGS: --config=file:/otel-lgtm/powerbank-infrastructure.yaml
+      POSTGRES_MONITOR_USER: bank       # local only; in production a role with only pg_monitor
+      POSTGRES_MONITOR_PASSWORD: bank
     volumes:
       # PowerBank dashboard and alert rules (observability/grafana), loaded on every start
       - ./observability/grafana/provisioning/dashboards/powerbank.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/powerbank.yaml:ro
       - ./observability/grafana/provisioning/alerting/powerbank.yaml:/otel-lgtm/grafana/conf/provisioning/alerting/powerbank.yaml:ro
       - ./observability/grafana/dashboards:/otel-lgtm/powerbank-dashboards:ro
+      - ./observability/otel-collector/infrastructure.yaml:/otel-lgtm/powerbank-infrastructure.yaml:ro
+      # log files of Postgres and the Temporal server, read-only
+      - postgres-logs:/var/log/powerbank/postgres:ro
+      - temporal-data:/var/log/powerbank/temporal:ro
   # later for stage 9: hashicorp/vault in dev mode
 
 volumes:
   postgres-data:
+  postgres-logs:
   temporal-data:

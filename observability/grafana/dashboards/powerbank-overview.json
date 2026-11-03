@@ -23,6 +23,16 @@
   },
   "links": [
     {
+      "title": "PowerBank",
+      "type": "dashboards",
+      "tags": [
+        "powerbank"
+      ],
+      "asDropdown": false,
+      "includeVars": false,
+      "keepTime": true
+    },
+    {
       "title": "Traces (Tempo)",
       "type": "link",
       "icon": "external link",

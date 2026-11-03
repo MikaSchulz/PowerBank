@@ -7,7 +7,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * The Grafana dashboard and alert rules in `observability/grafana` are loaded by the LGTM container. Grafana skips
+ * The Grafana dashboards and alert rules in `observability/grafana` are loaded by the LGTM container. Grafana skips
  * broken files with only a log line, so the basic consistency is checked here: valid files, unique IDs, alert rules
  * pointing to panels that exist, and the files mounted by compose.yaml.
  */
@@ -73,8 +73,9 @@ class GrafanaProvisioningTest {
     @Test
     fun `compose mounts files that exist`() {
         val volumes = load(root.resolve("compose.yaml")).map("services").let { it["lgtm"] as Map<*, *> }["volumes"] as List<*>
-        assertTrue(volumes.isNotEmpty())
-        volumes.map { it.toString().substringBefore(':') }.forEach { source ->
+        val files = volumes.map { it.toString().substringBefore(':') }.filter { it.startsWith("./") } // not named volumes
+        assertTrue(files.any { it.endsWith("otel-collector/infrastructure.yaml") }, "collector overlay not mounted")
+        files.forEach { source ->
             assertTrue(root.resolve(source).exists(), "compose.yaml mounts $source, which does not exist")
         }
     }
