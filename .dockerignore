@@ -1,0 +1,11 @@
+# Only what the bank-service image build needs (bank-service/Dockerfile, context: repository root)
+.git
+.github
+.gradle
+.kotlin
+.idea
+**/build
+**/node_modules
+docs
+observability
+showcase

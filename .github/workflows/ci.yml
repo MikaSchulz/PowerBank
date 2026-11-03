@@ -61,3 +61,34 @@ jobs:
             */build/reports/
             */build/test-results/
           retention-days: 7
+
+  # The showcase (docs/showcase.md): builds the bank-service image, starts everything with demo traffic and checks
+  # that transfers get booked and the ledger stays balanced. Runs next to the build job, not before it.
+  showcase:
+    name: Showcase (Docker)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build and start the showcase
+        run: docker compose --profile showcase up -d --build --wait
+
+      - name: Smoke test
+        run: |
+          sleep 30
+          curl -fsS localhost:8080/api/ledger/summary | python3 -c '
+          import json, sys
+          summary = json.load(sys.stdin)
+          print(summary)
+          assert summary["transferCount"] > 0, "the demo traffic booked nothing"
+          assert summary["sumOfAllPostingsCents"] == 0, "the ledger is unbalanced"
+          '
+
+      - name: Logs
+        if: failure()
+        run: docker compose --profile showcase logs --no-color bank-service traffic | tail -n 200
+
+      - name: Stop
+        if: always()
+        run: docker compose --profile showcase down -v

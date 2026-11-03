@@ -39,10 +39,14 @@ docker compose down
 
 Tests: `./gradlew test` needs no containers; `./gradlew integrationTest` runs against the stack started above.
 
+**No Java at hand?** The [showcase](docs/showcase.md) runs everything in Docker, with demo traffic and a ten-minute
+tour: `docker compose --profile showcase up -d --build --wait`.
+
 ## Documentation
 
 | | |
 | --- | --- |
+| [Showcase](docs/showcase.md) | everything in Docker with demo traffic, and a ten-minute tour |
 | [Local setup and tests](docs/local-setup.md) | the local stack, data and reset, unit and integration tests |
 | [Using the bank](docs/usage.md) | the UI, a manual test checklist, the API with curl |
 | [Architecture](docs/architecture.md) | modules, how a transfer works, the ledger, architecture rules |

@@ -71,6 +71,12 @@ tasks.register<Exec>("composeUp") {
 
 tasks.register<Exec>("composeDown") {
     group = "docker"
-    description = "Stops the local stack; the volumes (ledger, workflows) are kept (docker compose down)."
-    commandLine("docker", "compose", "down")
+    description = "Stops the local stack, including the showcase; the volumes (ledger, workflows) are kept."
+    commandLine("docker", "compose", "--profile", "showcase", "down")
+}
+
+tasks.register<Exec>("showcaseUp") {
+    group = "docker"
+    description = "Starts the whole system with the bank-service as a container and demo traffic (docs/showcase.md)."
+    commandLine("docker", "compose", "--profile", "showcase", "up", "-d", "--build", "--wait")
 }
