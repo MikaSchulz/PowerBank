@@ -43,6 +43,9 @@ subprojects {
         config.setFrom(rootProject.file("config/detekt/detekt.yml"))
         source.setFrom("src/main/kotlin", "src/test/kotlin", "src/integrationTest/kotlin")
     }
+    // detekt's embedded Kotlin compiler only knows JVM targets up to 22; it analyzes source, so the target doesn't
+    // change the result. Without this, it takes the toolchain's (25) and fails.
+    tasks.withType<io.gitlab.arturbosch.detekt.Detekt>().configureEach { jvmTarget = "21" }
     // detekt runs on the Kotlin version it was built with. Spring's dependency management would raise it to the
     // project's version, so this rule is registered after the build script (and with it Spring's rule).
     afterEvaluate {
