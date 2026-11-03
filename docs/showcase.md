@@ -45,9 +45,10 @@ The accounts have no names: the bank only knows pseudonymous IDs (see [decision 
 
 1. **The UI** (http://localhost:8080): transfers keep coming in. The generated accounts show up with their IDs, because nicknames only live in your browser. Open two accounts of your own with *New account* (give them nicknames), deposit something and send a transfer between them.
 2. **One transfer from the click to the SQL:** open your transfer in the drawer and follow *Trace in Grafana*. You see the click in the browser (`bank-ui`), the REST call, the workflow with its activities, the row lock and the SQL statements, all in one trace.
-   The transfers of the generator have the same trace, only without the browser part:
+   The transfers of the generator have the same trace, only without the browser part. Here an external transfer the
+   external bank rejected: risk check, debit with the row lock and the SQL, the call to the external bank, the refund.
 
-   ![A transfer of the demo traffic in Tempo](images/showcase-trace.png)
+   ![A refunded external transfer of the demo traffic in Tempo](images/showcase-trace.png)
 3. **The overview dashboard** (Grafana → Dashboards → PowerBank → *PowerBank overview*):
    - transfers per minute by outcome;
    - the ledger sum, which stays at 0;
