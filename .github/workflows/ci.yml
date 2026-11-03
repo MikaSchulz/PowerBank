@@ -29,8 +29,16 @@ jobs:
       # Caches Gradle and validates the wrapper
       - uses: gradle/actions/setup-gradle@v5
 
-      # Unit, workflow and ArchUnit tests plus the Testcontainers tests (Docker is available on GitHub runners)
+      # Compile and unit tests (domain, workflow, ArchUnit, web slices): no containers
       - run: ./gradlew build
+
+      # Integration tests against the local stack from compose.yaml (Grafana LGTM isn't needed for them)
+      - name: Start Postgres and Temporal
+        run: docker compose up -d --wait postgres temporal
+      - run: ./gradlew integrationTest
+      - name: Stop the stack
+        if: always()
+        run: docker compose down -v
 
       - uses: actions/upload-artifact@v5
         if: failure()

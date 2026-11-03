@@ -1,10 +1,13 @@
+# Connections to the local stack from compose.yaml. You start and stop it yourself: docker compose up -d --wait
+# (stop: docker compose down). In other environments, override these with environment variables, e.g.
+# SPRING_DATASOURCE_URL.
 spring:
   application:
     name: bank-service
-  docker:
-    compose:
-      file: ../compose.yaml
-      lifecycle-management: start-only
+  datasource:
+    url: jdbc:postgresql://localhost:5432/bank
+    username: bank
+    password: bank   # local only, as in compose.yaml
   temporal:
     connection:
       # Not "local": with that shortcut the Temporal SDK reports no metrics (temporal_*) in this setup.
@@ -22,9 +25,20 @@ management:
   tracing:
     sampling:
       probability: 1.0   # learning project: trace every request
+  # OTLP/HTTP to the collector in the Grafana LGTM container
+  opentelemetry:
+    tracing:
+      export:
+        otlp:
+          endpoint: http://localhost:4318/v1/traces
+    logging:
+      export:
+        otlp:
+          endpoint: http://localhost:4318/v1/logs
   otlp:
     metrics:
       export:
+        url: http://localhost:4318/v1/metrics
         step: 10s
   metrics:
     distribution:

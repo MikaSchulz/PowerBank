@@ -1,6 +1,6 @@
 package com.example.bank.observability
 
-import com.example.bank.TestcontainersConfiguration
+import com.example.bank.IntegrationTest
 import com.example.bank.workflow.TransferState
 import com.example.bank.workflow.TransferStatus
 import com.example.bank.workflow.transferWorkflowId
@@ -12,13 +12,7 @@ import io.opentelemetry.sdk.trace.SdkTracerProvider
 import io.temporal.client.WorkflowClient
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.test.context.SpringBootTest
-import org.springframework.boot.test.context.TestConfiguration
-import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
-import org.springframework.context.annotation.Bean
-import org.springframework.context.annotation.Import
 import org.springframework.http.MediaType
-import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
@@ -32,23 +26,13 @@ import kotlin.test.assertTrue
  * W3C trace context end to end: an incoming `traceparent` is continued through REST, Temporal (workflow header),
  * the activities and the SQL, and the trace ID is stored with the transfer.
  */
-@SpringBootTest
-@AutoConfigureMockMvc
-@ActiveProfiles("test")
-@Import(TestcontainersConfiguration::class, TracePropagationTest.InMemoryTracing::class)
+@IntegrationTest
 class TracePropagationTest @Autowired constructor(
     private val mvc: MockMvc,
     private val client: WorkflowClient,
     private val exporter: InMemorySpanExporter,
     private val tracerProvider: SdkTracerProvider,
 ) {
-
-    /** Spring Boot adds every SpanExporter bean to its span processor. */
-    @TestConfiguration(proxyBeanMethods = false)
-    class InMemoryTracing {
-        @Bean
-        fun inMemorySpanExporter(): InMemorySpanExporter = InMemorySpanExporter.create()
-    }
 
     @Test
     fun `an incoming traceparent is continued through REST, Temporal, activities and SQL`() {
