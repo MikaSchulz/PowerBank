@@ -404,3 +404,8 @@ bank-service/
   reconciliation job that finds them is planned in #40; in production Temporal needs its own database (#36).
 - **IBAN in the workflow:** for external transfers, the creditor IBAN is part of the workflow input. Stage 9 encrypts it
   with the payload codec. Even more data-minimizing: a payee ID that only the activity resolves.
+
+## Contributing
+
+One feature per branch and pull request, merged with a merge commit; details, rules and the dependency process in
+[CONTRIBUTING.md](CONTRIBUTING.md).

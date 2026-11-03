@@ -29,6 +29,19 @@ jobs:
       # Caches Gradle and validates the wrapper
       - uses: gradle/actions/setup-gradle@v5
 
+      # The vendored OpenTelemetry bundle for the browser must match package-lock.json (esbuild builds it reproducibly)
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: bank-service/src/main/ui-telemetry/package-lock.json
+      - name: Check the vendored browser telemetry bundle
+        working-directory: bank-service/src/main/ui-telemetry
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+          git diff --exit-code -- ../resources/static/vendor/otel-web.js
+
       # Compile and unit tests (domain, workflow, ArchUnit, web slices): no containers
       - run: ./gradlew build
 
