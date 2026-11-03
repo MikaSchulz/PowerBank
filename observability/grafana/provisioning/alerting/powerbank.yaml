@@ -1,0 +1,284 @@
+# PowerBank alert rules (Grafana-managed), provisioned into the folder "PowerBank". Mounted into the
+# grafana/otel-lgtm container by compose.yaml; changes need a container restart.
+#
+# Every rule has a query A and a threshold C. Rules return "no data" while the bank-service isn't running or there
+# is no traffic; that counts as OK. Notifications aren't configured yet: firing alerts show up under
+# Alerting → Alert rules and on the dashboard "PowerBank overview".
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: PowerBank
+    folder: PowerBank
+    interval: 30s
+    rules:
+      - uid: powerbank-ledger-unbalanced
+        title: Ledger unbalanced
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: abs(sum(bank_ledger_sum_cents))
+              instant: true
+              range: false
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        labels:
+          severity: critical
+        annotations:
+          summary: The sum of all postings is not 0.
+          description: >-
+            Double-entry bookkeeping is broken: the postings sum up to {{ $values.A.Value }} cents instead of 0.
+            Every transfer must sum up to zero; find it with the query in the README (section Ledger).
+          __dashboardUid__: powerbank-overview
+          __panelId__: "2"
+
+      - uid: powerbank-external-bank-failing
+        title: External bank does not accept payments
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              # Share of calls that were rejected or failed technically, only with at least 5 calls in 5 minutes.
+              expr: >-
+                (sum(increase(bank_external_bank_call_milliseconds_count{outcome!="accepted"}[5m]))
+                  / sum(increase(bank_external_bank_call_milliseconds_count[5m])))
+                and on() (sum(increase(bank_external_bank_call_milliseconds_count[5m])) >= 5)
+              instant: true
+              range: false
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0.5] }
+        noDataState: OK
+        execErrState: Error
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: More than half of the calls to the external bank were not accepted in the last 5 minutes.
+          description: >-
+            {{ humanizePercentage $values.A.Value }} of the calls were rejected or failed. Technical failures are retried
+            by Temporal; check the simulator settings in the UI.
+          __dashboardUid__: powerbank-overview
+          __panelId__: "13"
+
+      - uid: powerbank-refund-rate
+        title: Many external transfers refunded
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 1800, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              # Share of finished external transfers that were refunded, only with at least 5 of them in 15 minutes.
+              expr: >-
+                (sum(increase(bank_transfers_finished_total{kind="external", status="REFUNDED"}[15m]))
+                  / sum(increase(bank_transfers_finished_total{kind="external"}[15m])))
+                and on() (sum(increase(bank_transfers_finished_total{kind="external"}[15m])) >= 5)
+              instant: true
+              range: false
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0.3] }
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        labels:
+          severity: warning
+        annotations:
+          summary: More than 30 % of the external transfers in the last 15 minutes were refunded.
+          description: "{{ humanizePercentage $values.A.Value }} of the finished external transfers were refunded."
+          __dashboardUid__: powerbank-overview
+          __panelId__: "13"
+
+      - uid: powerbank-approval-waiting
+        title: Transfer waiting for approval for over a day
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: max(bank_transfers_in_flight_age_max_seconds{status="PENDING"})
+              instant: true
+              range: false
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [86400] }
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        labels:
+          severity: warning
+        annotations:
+          summary: A transfer has been waiting for more than a day.
+          description: >-
+            The oldest pending transfer is {{ humanizeDuration $values.A.Value }} old. Transfers above the limit wait
+            for an approval for up to 3 days and are rejected afterwards; approve or deny it in the UI.
+          __dashboardUid__: powerbank-overview
+          __panelId__: "4"
+
+      - uid: powerbank-external-transfer-stuck
+        title: External transfer stuck
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: max(bank_transfers_in_flight_age_max_seconds{status="DEBITED"})
+              instant: true
+              range: false
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [900] }
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        labels:
+          severity: warning
+        annotations:
+          summary: An external transfer has been debited for more than 15 minutes without being finished.
+          description: >-
+            The workflow refunds the debit after 10 minutes without an answer from the external bank, so after
+            {{ humanizeDuration $values.A.Value }} something is wrong: is the worker running?
+          __dashboardUid__: powerbank-overview
+          __panelId__: "4"
+
+      - uid: powerbank-worker-backlog
+        title: Temporal workers can't keep up
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              # p95 schedule-to-start latency, one series per task kind.
+              expr: >-
+                histogram_quantile(0.95, sum by (le, task) (
+                  label_replace(rate(temporal_workflow_task_schedule_to_start_latency_milliseconds_bucket[5m]), "task", "workflow task", "", "")
+                  or
+                  label_replace(rate(temporal_activity_schedule_to_start_latency_milliseconds_bucket[5m]), "task", "activity", "", "")
+                ))
+              instant: true
+              range: false
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [1000] }
+        noDataState: OK
+        execErrState: Error
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.task }}s wait more than 1 s in the task queue (p95)."
+          description: >-
+            Schedule-to-start p95 is {{ humanize $values.A.Value }} ms: the workers are too slow or have too few
+            slots. Compare with "Task slots in use" on the dashboard.
+          __dashboardUid__: powerbank-overview
+          __panelId__: "16"
+
+      - uid: powerbank-api-server-errors
+        title: REST API returns server errors
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: sum by (method, uri) (increase(http_server_requests_milliseconds_count{status=~"5.."}[5m]))
+              instant: true
+              range: false
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.method }} {{ $labels.uri }} answered with 5xx in the last 5 minutes."
+          description: Look for the errors in the logs panel of the dashboard or in Loki with severity_text="ERROR".
+          __dashboardUid__: powerbank-overview
+          __panelId__: "22"
+
+      - uid: powerbank-browser-errors
+        title: JavaScript errors in the UI
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: loki
+            model:
+              refId: A
+              expr: sum(count_over_time({service_name="bank-ui"} | severity_text="ERROR" [5m]))
+              queryType: instant
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        labels:
+          severity: warning
+        annotations:
+          summary: The UI reported {{ $values.A.Value }} JavaScript errors or failed actions in the last 5 minutes.
+          description: The log records carry the stack trace and, for failed actions, the trace ID of the action.
+          __dashboardUid__: powerbank-overview
+          __panelId__: "28"

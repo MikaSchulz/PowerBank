@@ -27,7 +27,12 @@ export async function initTelemetry({ enabled = true, endpoint = '/api/otel/v1',
   if (!enabled) return false;
   try {
     otel = await import('./vendor/otel-web.js');
-    const resource = otel.resourceFromAttributes({ 'service.name': 'bank-ui', 'service.version': serviceVersion });
+    // One instance per page load: the metrics are cumulative per page, so two tabs must not write into the same series.
+    const resource = otel.resourceFromAttributes({
+      'service.name': 'bank-ui',
+      'service.version': serviceVersion,
+      'service.instance.id': crypto.randomUUID(),
+    });
 
     const tracerProvider = new otel.TracerProvider({
       resource,
@@ -71,12 +76,15 @@ export async function initTelemetry({ enabled = true, endpoint = '/api/otel/v1',
 }
 
 function recordWebVitals(meter) {
-  const histogram = (name, unit, description) => meter.createHistogram(`browser.web_vitals.${name}`, { unit, description });
-  const lcp = histogram('lcp', 'ms', 'Largest Contentful Paint');
-  const inp = histogram('inp', 'ms', 'Interaction to Next Paint');
-  const fcp = histogram('fcp', 'ms', 'First Contentful Paint');
-  const ttfb = histogram('ttfb', 'ms', 'Time to First Byte');
-  const cls = histogram('cls', '1', 'Cumulative Layout Shift');
+  const histogram = (name, unit, description, buckets) =>
+    meter.createHistogram(`browser.web_vitals.${name}`, { unit, description, advice: { explicitBucketBoundaries: buckets } });
+  // Bucket boundaries around the web.dev thresholds (good / needs improvement / poor), so percentiles are meaningful.
+  const MS = [50, 100, 200, 300, 500, 800, 1000, 1800, 2500, 3000, 4000, 6000, 10000];
+  const lcp = histogram('lcp', 'ms', 'Largest Contentful Paint', MS);
+  const inp = histogram('inp', 'ms', 'Interaction to Next Paint', MS);
+  const fcp = histogram('fcp', 'ms', 'First Contentful Paint', MS);
+  const ttfb = histogram('ttfb', 'ms', 'Time to First Byte', MS);
+  const cls = histogram('cls', '1', 'Cumulative Layout Shift', [0.01, 0.025, 0.05, 0.1, 0.15, 0.25, 0.5, 1]);
   const record = (instrument) => (metric) => instrument.record(metric.value, { rating: metric.rating });
   otel.onLCP(record(lcp));
   otel.onINP(record(inp));
