@@ -1,0 +1,14 @@
+# Loads the PowerBank dashboards into the folder "PowerBank". Mounted into the grafana/otel-lgtm container by
+# compose.yaml. Grafana re-reads the JSON files every 10 seconds; changes made in the UI are not written back.
+apiVersion: 1
+
+providers:
+  - name: PowerBank
+    folder: PowerBank
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    updateIntervalSeconds: 10
+    options:
+      path: /otel-lgtm/powerbank-dashboards
+      foldersFromFilesStructure: false

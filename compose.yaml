@@ -15,4 +15,11 @@ services:
   lgtm:
     image: grafana/otel-lgtm:0.39.0
     ports: ["3000:3000", "4317:4317", "4318:4318"]
+    environment:
+      PROMETHEUS_EXTRA_ARGS: --enable-feature=created-timestamp-zero-ingestion
+    volumes:
+      # PowerBank dashboard and alert rules (observability/grafana), loaded on every start
+      - ./observability/grafana/provisioning/dashboards/powerbank.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/powerbank.yaml:ro
+      - ./observability/grafana/provisioning/alerting/powerbank.yaml:/otel-lgtm/grafana/conf/provisioning/alerting/powerbank.yaml:ro
+      - ./observability/grafana/dashboards:/otel-lgtm/powerbank-dashboards:ro
   # later for stage 9: hashicorp/vault in dev mode

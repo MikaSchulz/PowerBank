@@ -150,11 +150,19 @@ itself (other port, CORS), and in the cloud the proxy is where a login will be r
 | `bank_transfers_finished_total{status, kind}` | workflow, via `Workflow.getMetricsScope()` (replay-safe, no double counting) |
 | `bank_transfer_approval_wait_*` | workflow: time between "awaiting approval" and the decision |
 | `bank_ledger_lock_milliseconds_*`, `bank_account_command_milliseconds_*` | ledger observations |
+| `bank_ledger_sum_cents` | ledger gauge: the sum of all postings, always 0 (`LedgerMetrics`) |
+| `bank_transfers_in_flight{status}`, `bank_transfers_in_flight_age_max_seconds{status}` | ledger gauges: unfinished transfers (PENDING, DEBITED) and the age of the oldest |
 | `temporal_*` (about 50 metrics) | Temporal SDK: workflow/activity latencies, schedule-to-start, failures, pollers, … |
 | `http_server_*`, `hikaricp_*`, `jvm_*` | Spring Boot |
 
 Example: `sum by (status, kind) (bank_transfers_finished_total)` or
 `histogram_quantile(0.95, sum by (le) (rate(bank_ledger_lock_milliseconds_bucket[5m])))`.
+
+- The `bank.*` timers and `http.server.requests` publish histogram buckets
+  (`management.metrics.distribution.percentiles-histogram`), so percentiles can be computed in Prometheus.
+- Prometheus runs with `--enable-feature=created-timestamp-zero-ingestion` (`compose.yaml`): a series that arrives
+  with its first value already counted (the first approval, every browser page) starts at 0, so `rate()` and
+  `increase()` see that first value too.
 
 **Logs (Loki):** console as usual, plus every log event via OTLP. Temporal puts `WorkflowId`, `RunId`,
 `ActivityType`, `Attempt` and `TaskQueue` into the MDC, so each log line carries them as attributes together with
@@ -163,6 +171,36 @@ Example: `sum by (status, kind) (bank_transfers_finished_total)` or
 
 - In workflows, log with `Workflow.getLogger(...)`: it does not log again while a workflow is replayed.
 - Logs, spans and metric tags only contain pseudonymous IDs and amounts, never names or IBANs.
+
+**Dashboard and alerts (Grafana):** provisioned from `observability/grafana` on every start of the LGTM container.
+
+- Dashboard *PowerBank overview* (Dashboards → PowerBank, http://localhost:3000/d/powerbank-overview): ledger sum,
+  transfers in flight and the oldest waiting one, firing alerts, finished transfers, approval wait, lock waits and
+  account commands, external bank outcomes and refund share, Temporal schedule-to-start and activity failures, REST
+  API rates and latencies, browser web vitals and UI actions, and the warnings and errors from Loki. Links at the top
+  open Tempo, Loki and the alert rules.
+- Alert rules (Alerting → Alert rules → folder PowerBank), evaluated every 30 seconds:
+
+| Alert | Fires when | Severity |
+| --- | --- | --- |
+| Ledger unbalanced | `bank_ledger_sum_cents` is not 0 | critical |
+| External bank does not accept payments | more than 50 % of the calls rejected or failed in 5 minutes (at least 5 calls), for 1 minute | warning |
+| Many external transfers refunded | more than 30 % of the finished external transfers refunded in 15 minutes (at least 5) | warning |
+| Transfer waiting for approval for over a day | oldest PENDING transfer older than 24 hours | warning |
+| External transfer stuck | oldest DEBITED transfer older than 15 minutes (the workflow refunds after 10) | warning |
+| Temporal workers can't keep up | schedule-to-start p95 of workflow tasks or activities above 1 second for 2 minutes | warning |
+| REST API returns server errors | any 5xx response in 5 minutes | warning |
+| JavaScript errors in the UI | any error log from `bank-ui` in 5 minutes | warning |
+
+- No data (the bank-service isn't running, no traffic) counts as OK. Notifications aren't configured yet: firing
+  alerts are visible in Grafana and on the dashboard.
+- Try it: the simulator preset *Chaos* plus a few external transfers fires the external bank alerts.
+- Changing them: Grafana re-reads the dashboard JSON every 10 seconds, but doesn't save changes made in the UI to
+  the file. Edit in the UI, export the JSON (*Export → Export as JSON*) and replace
+  `observability/grafana/dashboards/powerbank-overview.json`. Alert rules are read at startup:
+  `docker compose restart lgtm`. `GrafanaProvisioningTest` checks that the files fit together.
+- If the ledger alert ever fires, this finds the transfer that doesn't sum up to zero:
+  `SELECT transfer_id, SUM(amount_cents) FROM postings GROUP BY transfer_id HAVING SUM(amount_cents) <> 0;`
 
 **Temporal connection:** `spring.temporal.connection.target` is `localhost:7233`, not the `local` shortcut. With
 `local`, the SDK reported no `temporal_*` metrics in this setup.
@@ -218,6 +256,7 @@ More endpoints:
 
 ```
 domain/          fmodel decider (account) and risk rules: pure business logic, only fmodel + coroutines
+observability/grafana/  dashboard and alert rules, mounted into the LGTM container by compose.yaml
 bank-service/
   ledger/        AccountEventRepository (postings = events), Ledger (transactions, locks), queries
   workflow/      TransferWorkflow
@@ -290,5 +329,8 @@ bank-service/
   transfer ID, but forgets its decisions on restart.
 - **Hot rows:** every deposit locks the cash account, every external transfer locks the clearing account. System
   accounts wouldn't need a lock (they have no funds check) and no balance fold either. A candidate for the balance snapshot.
+- **Temporal dev server forgets on restart:** `start-dev` in `compose.yaml` keeps workflows in memory. After a
+  restart of the container, transfers that were still running stay PENDING or DEBITED in the ledger without a
+  workflow; the dashboard shows them under *Oldest waiting transfer* and the alerts above fire for them.
 - **IBAN in the workflow:** for external transfers, the creditor IBAN is part of the workflow input. Stage 9 encrypts it
   with the payload codec. Even more data-minimizing: a payee ID that only the activity resolves.

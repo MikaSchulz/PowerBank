@@ -42,3 +42,9 @@ dependencies {
     testImplementation("io.opentelemetry:opentelemetry-sdk-testing")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
+
+tasks.test {
+    // GrafanaProvisioningTest reads the Grafana files and compose.yaml: run the tests again when they change.
+    inputs.dir(rootProject.file("observability")).withPropertyName("observability").withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.file(rootProject.file("compose.yaml")).withPropertyName("compose").withPathSensitivity(PathSensitivity.RELATIVE)
+}

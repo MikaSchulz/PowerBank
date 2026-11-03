@@ -26,6 +26,13 @@ management:
     metrics:
       export:
         step: 10s
+  metrics:
+    distribution:
+      # Histogram buckets for our own timers and HTTP, so the dashboard can show percentiles (Temporal's timers
+      # have them already).
+      percentiles-histogram:
+        bank: true
+        http.server.requests: true
 
 jdbc:
   datasource-proxy:

@@ -8,6 +8,7 @@ import com.example.bank.workflow.TransferState
 import com.example.bank.workflow.TransferStatus
 import com.example.bank.workflow.transferWorkflowId
 import com.jayway.jsonpath.JsonPath
+import io.micrometer.core.instrument.MeterRegistry
 import io.temporal.client.WorkflowClient
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
@@ -38,6 +39,7 @@ class TransferApiTest @Autowired constructor(
     private val mvc: MockMvc,
     private val client: WorkflowClient,
     private val queries: LedgerQueries,
+    private val registry: MeterRegistry,
 ) {
 
     @AfterEach
@@ -150,6 +152,28 @@ class TransferApiTest @Autowired constructor(
             status { isConflict() }
             jsonPath("$.detail") { value("Transfer is not awaiting approval (status BOOKED)") }
         }
+    }
+
+    @Test
+    fun `the ledger gauges show a balanced ledger and the transfer waiting for approval`() {
+        val alice = openAccount()
+        val bob = openAccount()
+        deposit(alice, 20_000_00)
+        val waitingBefore = inFlight("PENDING")
+
+        val transferId = postTransfer("""{"debtorAccountId":"$alice","creditorAccountId":"$bob","amountCents":1500000}""")
+        awaitStatus(transferId, "AWAITING_APPROVAL")
+
+        assertEquals(waitingBefore + 1, inFlight("PENDING"))
+        assertTrue(registry.get("bank.transfers.in.flight.age.max").tag("status", "PENDING").gauge().value() >= 0.0)
+        assertEquals(0.0, registry.get("bank.ledger.sum").gauge().value())
+
+        mvc.post("/api/transfers/$transferId/approval") {
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"approved":false}"""
+        }.andExpect { status { isOk() } }
+        awaitResult(transferId)
+        assertEquals(waitingBefore, inFlight("PENDING"))
     }
 
     @Test
@@ -322,6 +346,8 @@ class TransferApiTest @Autowired constructor(
         JsonPath.read(mvc.get(url).andExpect { status { isOk() } }.andReturn().response.contentAsString, path)
 
     private fun balance(account: UUID) = queries.balanceOf(AccountId(account))
+
+    private fun inFlight(status: String) = registry.get("bank.transfers.in.flight").tag("status", status).gauge().value()
 
     /** Builds an IBAN with valid check digits. */
     private fun iban(country: String, bban: String): String {
