@@ -18,6 +18,16 @@ Prerequisites: Java 25 and Docker. Gradle comes with the wrapper.
 On startup, Spring Boot runs `compose.yaml` (Postgres, the Temporal dev server and Grafana LGTM) and keeps the
 containers running afterwards (`start-only`), so workflow histories survive app restarts.
 
+Ledger and workflows are kept on Docker volumes (`postgres-data`, `temporal-data`): running transfers survive a
+restart of the containers and `docker compose down`. To start from scratch, reset both together, never only one
+of them, otherwise the ledger has transfers without workflows (or the other way round):
+
+```bash
+docker compose down -v
+```
+
+Telemetry (Grafana LGTM) has no volume and starts empty after the container is recreated.
+
 - UI: http://localhost:8080
 - API: http://localhost:8080/api
 - Temporal Web UI: http://localhost:8233
@@ -330,8 +340,10 @@ bank-service/
   transfer ID, but forgets its decisions on restart.
 - **Hot rows:** every deposit locks the cash account, every external transfer locks the clearing account. System
   accounts wouldn't need a lock (they have no funds check) and no balance fold either. A candidate for the balance snapshot.
-- **Temporal dev server forgets on restart:** `start-dev` in `compose.yaml` keeps workflows in memory. After a
-  restart of the container, transfers that were still running stay PENDING or DEBITED in the ledger without a
-  workflow; the dashboard shows them under *Oldest waiting transfer* and the alerts above fire for them.
+- **Two stores, one truth:** the ledger lives in Postgres, the running transfers in Temporal. Locally both are on
+  volumes and reset together (`docker compose down -v`); until #40 brought the volume, the dev server kept
+  workflows in memory and lost them on every restart. If the two ever get out of sync, transfers stay PENDING or
+  DEBITED without a workflow: the dashboard shows them under *Oldest waiting transfer* and the alerts fire. A
+  reconciliation job that finds them is planned in #40; in production Temporal needs its own database (#36).
 - **IBAN in the workflow:** for external transfers, the creditor IBAN is part of the workflow input. Stage 9 encrypts it
   with the payload codec. Even more data-minimizing: a payee ID that only the activity resolves.
