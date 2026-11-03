@@ -38,6 +38,8 @@ data class TransferDetails(
     val debtorAccountId: UUID,
     val creditorAccountId: UUID?,
     val amountCents: Long,
+    /** W3C trace ID of the accepting request, if it was sampled. */
+    val traceId: String? = null,
 )
 
 data class TransferListItem(
@@ -63,8 +65,8 @@ class TransferRecords(private val jdbc: JdbcClient) {
     fun register(details: TransferDetails) {
         jdbc.sql(
             """
-            INSERT INTO transfers (id, status, kind, debtor_account_id, creditor_account_id, amount_cents)
-            VALUES (:id, 'PENDING', :kind, :debtor, :creditor, :amount)
+            INSERT INTO transfers (id, status, kind, debtor_account_id, creditor_account_id, amount_cents, trace_id)
+            VALUES (:id, 'PENDING', :kind, :debtor, :creditor, :amount, :traceId)
             ON CONFLICT (id) DO NOTHING
             """,
         )
@@ -73,6 +75,7 @@ class TransferRecords(private val jdbc: JdbcClient) {
             .param("debtor", details.debtorAccountId)
             .param("creditor", details.creditorAccountId)
             .param("amount", details.amountCents)
+            .param("traceId", details.traceId)
             .update()
     }
 
@@ -87,7 +90,7 @@ class TransferRecords(private val jdbc: JdbcClient) {
     fun list(accountId: UUID?, limit: Int): List<TransferListItem> =
         jdbc.sql(
             """
-            SELECT id, status, reason, kind, debtor_account_id, creditor_account_id, amount_cents, created_at, updated_at
+            SELECT id, status, reason, kind, debtor_account_id, creditor_account_id, amount_cents, trace_id, created_at, updated_at
             FROM transfers
             WHERE CAST(:account AS UUID) IS NULL OR debtor_account_id = :account OR creditor_account_id = :account
             ORDER BY created_at DESC, id
@@ -107,6 +110,7 @@ class TransferRecords(private val jdbc: JdbcClient) {
                             debtorAccountId = rs.getObject("debtor_account_id", UUID::class.java),
                             creditorAccountId = rs.getObject("creditor_account_id", UUID::class.java),
                             amountCents = rs.getLong("amount_cents"),
+                            traceId = rs.getString("trace_id"),
                         )
                     },
                     id = id,

@@ -84,6 +84,20 @@ http post /api/transfers
 - `bank.ledger.lock` and `bank.account.command` are Micrometer observations in the `Ledger` (span and timer at once).
   Run the burst scenario and look at the lock waits.
 
+**W3C trace context (`traceparent`):** one trace ID from the click in the browser down to the SQL.
+
+- The UI sends a fresh `traceparent` with every user action (`00-<trace-id>-<span-id>-01`, sampled). Its polling
+  sends the flag `00` (not sampled), so Tempo only contains what you actually did.
+- Spring Boot continues an incoming `traceparent`; without one it starts a new trace.
+- Temporal carries the context in the workflow header `_tracer-data` as a W3C `traceparent`, so the workflow and all
+  its activities continue the same trace, also after a worker restart.
+- The trace ID is stored with the transfer (`transfers.trace_id`), returned by `POST /api/transfers` and listed by
+  `GET /api/transfers`. The transfer drawer in the UI links straight to the trace in Grafana.
+- Only `/api/` requests are traced; the UI's static files and actuator calls are skipped (`ObservabilityConfig`).
+- `TracePropagationTest` proves all of this with an in-memory span exporter.
+- Try it with curl: `-H 'traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01'`, then search for
+  that trace ID in Grafana.
+
 **Metrics (Prometheus):**
 
 | Metric | Source |

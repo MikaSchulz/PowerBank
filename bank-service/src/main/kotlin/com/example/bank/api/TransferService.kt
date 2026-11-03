@@ -13,6 +13,7 @@ import com.example.bank.workflow.TransferState
 import com.example.bank.workflow.TransferStatus
 import com.example.bank.workflow.TransferWorkflow
 import com.example.bank.workflow.transferWorkflowId
+import io.opentelemetry.api.trace.Span
 import io.temporal.api.enums.v1.WorkflowIdReusePolicy
 import io.temporal.client.WorkflowClient
 import io.temporal.client.WorkflowExecutionAlreadyStarted
@@ -34,6 +35,8 @@ data class TransferView(
     val reason: String?,
     val createdAt: Instant,
     val updatedAt: Instant,
+    /** W3C trace ID of the request that accepted the transfer; links to the trace in Tempo. */
+    val traceId: String?,
 )
 
 /** Client side: starts transfer workflows, queries them and sends updates. */
@@ -48,7 +51,8 @@ class TransferService(
      * Registers the transfer and starts the workflow. The transfer ID is the workflow ID: a second start with the
      * same ID throws [WorkflowExecutionAlreadyStarted], even if the first workflow has already finished.
      */
-    fun start(request: TransferRequest) {
+    fun start(request: TransferRequest): String? {
+        val traceId = currentTraceId()
         records.register(
             TransferDetails(
                 id = request.transferId,
@@ -60,6 +64,7 @@ class TransferService(
                 debtorAccountId = request.debtorAccountId,
                 creditorAccountId = request.creditorAccountId,
                 amountCents = request.amountCents,
+                traceId = traceId,
             ),
         )
         val workflow = client.newWorkflowStub(
@@ -71,6 +76,8 @@ class TransferService(
                 .build(),
         )
         try {
+            // Temporal's tracing interceptor puts the current trace context (W3C traceparent) into the workflow
+            // header, so the workflow and all its activities continue this trace.
             WorkflowClient.start(workflow::transfer, request)
         } catch (e: WorkflowExecutionAlreadyStarted) {
             throw e // the registration belongs to the first submission
@@ -78,6 +85,7 @@ class TransferService(
             records.discardIfPending(TransferId(request.transferId))
             throw e
         }
+        return traceId
     }
 
     /** Status via query; if the workflow is no longer in Temporal (retention expired), from the ledger. */
@@ -112,6 +120,7 @@ class TransferService(
                 reason = live?.reason ?: item.reason,
                 createdAt = item.createdAt,
                 updatedAt = item.updatedAt,
+                traceId = item.details?.traceId,
             )
         }
 
@@ -130,6 +139,10 @@ class TransferService(
         log.debug("Could not query transfer {}: {}", transferId, e.message)
         null
     }
+
+    /** The trace this request belongs to, if it is recorded (sampled). Comes from an incoming `traceparent` or a new trace. */
+    private fun currentTraceId(): String? =
+        Span.current().spanContext.takeIf { it.isValid && it.isSampled }?.traceId
 
     private fun stub(transferId: UUID): TransferWorkflow =
         client.newWorkflowStub(TransferWorkflow::class.java, transferWorkflowId(transferId))

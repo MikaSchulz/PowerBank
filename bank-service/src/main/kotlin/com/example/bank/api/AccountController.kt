@@ -55,7 +55,7 @@ class AccountController(
     fun deposit(@PathVariable accountId: UUID, @RequestBody body: DepositBody): ResponseEntity<TransferAccepted> {
         require(body.amountCents > 0) { "Amount must be positive" }
         val transferId = body.transferId ?: UUID.randomUUID()
-        transfers.start(
+        val traceId = transfers.start(
             TransferRequest(
                 transferId = transferId,
                 debtorAccountId = SystemAccounts.CASH.value,
@@ -63,7 +63,7 @@ class AccountController(
                 creditorAccountId = accountId,
             ),
         )
-        return TransferController.accepted(transferId)
+        return TransferController.accepted(transferId, traceId)
     }
 
     @PostMapping("/{accountId}/block")
