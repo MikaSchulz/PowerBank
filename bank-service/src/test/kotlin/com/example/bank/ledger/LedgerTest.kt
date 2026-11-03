@@ -207,14 +207,18 @@ class LedgerTest @Autowired constructor(
         val t = newTransfer()
         val a = newAccount()
 
-        assertThrows<Exception> {
+        val error = assertThrows<Exception> {
             tx.executeWithoutResult {
                 jdbc.sql("INSERT INTO transfers (id, status) VALUES (:t, 'PENDING')").param("t", t.value).update()
-                jdbc.sql("INSERT INTO postings (transfer_id, account_id, leg, amount_cents, booked_at) VALUES (:t, :a, 'credit', 100, now())")
+                jdbc.sql("INSERT INTO postings (transfer_id, account_id, leg, amount_cents, booked_at) VALUES (:t, :a, 'credit', 12345, now())")
                     .param("t", t.value).param("a", a.value).update()
             }
         }
         assertTrue(queries.postingsOfTransfer(t).isEmpty())
+        // The message ends up in logs: the transfer ID, but no amount.
+        val messages = generateSequence<Throwable>(error) { it.cause }.mapNotNull { it.message }.joinToString(" | ")
+        assertTrue("transfer ${t.value} is unbalanced" in messages, messages)
+        assertTrue("12345" !in messages, messages)
     }
 
     private fun newTransfer() = TransferId(UUID.randomUUID())

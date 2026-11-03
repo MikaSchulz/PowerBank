@@ -1,0 +1,128 @@
+# Infrastructure telemetry: an overlay for the OpenTelemetry Collector inside the grafana/otel-lgtm container.
+# compose.yaml mounts it and passes it as a second --config (OTELCOL_EXTRA_ARGS). The collector merges it with the
+# image's own config, so it may use that config's names: the processor "batch" and the exporters
+# "otlp_http/metrics" (Prometheus) and "otlp_http/logs" (Loki). New pipelines are added; the image's stay untouched.
+#
+# - Temporal server: scrapes its Prometheus endpoint and keeps only the metrics the dashboard and alerts use.
+# - Postgres: the postgresql receiver reads pg_stat_* views (connections, transactions, locks, deadlocks, sizes).
+# - Logs: Postgres writes JSON logs, the Temporal server's JSON output is copied to a file (see compose.yaml); both
+#   are read from read-only volumes. Postgres is configured not to log statement parameters or row values.
+
+receivers:
+  prometheus/temporal:
+    config:
+      scrape_configs:
+        - job_name: temporal-server
+          scrape_interval: 15s
+          static_configs:
+            - targets: ["temporal:9233"]
+          metric_relabel_configs:
+            - source_labels: [__name__]
+              action: keep
+              regex: "service_(requests|errors|error_with_type|pending_requests)|service_latency_(bucket|sum|count)|persistence_(requests|errors|error_with_type)|persistence_latency_(bucket|sum|count)|approximate_backlog_count|approximate_backlog_age_seconds|task_schedule_to_start_latency_(bucket|sum|count)|poll_(success|success_sync|timeouts)|workflow_(success|failed|timeout|terminate|cancel)|memory_(heap|allocated)|num_goroutines|restarts"
+
+  postgresql:
+    endpoint: postgres:5432
+    transport: tcp
+    username: ${env:POSTGRES_MONITOR_USER}
+    password: ${env:POSTGRES_MONITOR_PASSWORD}
+    databases: [bank]
+    collection_interval: 15s
+    tls:
+      insecure: true
+    metrics:
+      postgresql.deadlocks:
+        enabled: true
+      postgresql.database.locks:
+        enabled: true
+      postgresql.temp_files:
+        enabled: true
+      postgresql.sequential_scans:
+        enabled: true
+
+  file_log/postgres:
+    include: [/var/log/powerbank/postgres/*.json]
+    start_at: beginning
+    operators:
+      - type: json_parser
+        timestamp:
+          parse_from: attributes.timestamp
+          layout_type: gotime
+          layout: "2006-01-02 15:04:05.000 MST"
+        severity:
+          parse_from: attributes.error_severity
+          mapping:
+            debug: [DEBUG1, DEBUG2, DEBUG3, DEBUG4, DEBUG5]
+            info: [LOG, INFO, NOTICE]
+            warn: WARNING
+            error: ERROR
+            fatal: [FATAL, PANIC]
+      - type: move
+        from: attributes.message
+        to: body
+      # jsonlog always writes DETAIL (e.g. a failing row with its values), CONTEXT and the statement, whatever
+      # log_error_verbosity says. Only these fields go on, so nothing that can quote data reaches Loki.
+      - type: retain
+        fields:
+          - attributes.error_severity
+          - attributes.state_code
+          - attributes.backend_type
+          - attributes.dbname
+          - attributes.application_name
+          - attributes.pid
+          - attributes.session_id
+
+  file_log/temporal:
+    include: [/var/log/powerbank/temporal/logs/*.log]
+    start_at: beginning
+    operators:
+      # The CLI prints a plain-text banner before the server's JSON logs: drop it.
+      - type: filter
+        expr: 'body not matches "^\\{"'
+      # Go slog: {"time": "...", "level": "WARN", "msg": "...", "service": "history", ...}
+      - type: json_parser
+        timestamp:
+          parse_from: attributes.time
+          layout_type: gotime
+          layout: "2006-01-02T15:04:05.999999999Z07:00"
+        severity:
+          parse_from: attributes.level
+          mapping:
+            debug: DEBUG
+            info: INFO
+            warn: WARN
+            error: ERROR
+      - type: move
+        from: attributes.msg
+        to: body
+
+processors:
+  resource/postgres:
+    attributes:
+      - key: service.name
+        value: postgres
+        action: upsert
+  resource/temporal:
+    attributes:
+      - key: service.name
+        value: temporal-server
+        action: upsert
+
+service:
+  pipelines:
+    metrics/temporal-server:
+      receivers: [prometheus/temporal]
+      processors: [batch]
+      exporters: [otlp_http/metrics]
+    metrics/postgres:
+      receivers: [postgresql]
+      processors: [resource/postgres, batch]
+      exporters: [otlp_http/metrics]
+    logs/postgres:
+      receivers: [file_log/postgres]
+      processors: [resource/postgres, batch]
+      exporters: [otlp_http/logs]
+    logs/temporal-server:
+      receivers: [file_log/temporal]
+      processors: [resource/temporal, batch]
+      exporters: [otlp_http/logs]

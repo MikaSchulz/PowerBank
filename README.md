@@ -202,6 +202,12 @@ Example: `sum by (status, kind) (bank_transfers_finished_total)` or
 | Temporal workers can't keep up | schedule-to-start p95 of workflow tasks or activities above 1 second for 2 minutes | warning |
 | REST API returns server errors | any 5xx response in 5 minutes | warning |
 | JavaScript errors in the UI | any error log from `bank-ui` in 5 minutes | warning |
+| Temporal server down | its metrics endpoint doesn't answer for 1 minute | critical |
+| Nobody works on the bank task queue | a task waits more than 60 seconds in the `bank` task queue, for 1 minute (measured by the server, so it also fires when the bank-service is down) | critical |
+| Temporal server can't reach its database | persistence errors of type Unavailable, Timeout, DeadlineExceeded or Internal | warning |
+| Postgres unreachable | the collector can't read the database size for 1 minute | critical |
+| Postgres connections almost used up | more than 80 % of `max_connections` for 2 minutes | warning |
+| Postgres deadlocks | any deadlock in 10 minutes | warning |
 
 - No data (the bank-service isn't running, no traffic) counts as OK. Notifications aren't configured yet: firing
   alerts are visible in Grafana and on the dashboard.
@@ -210,8 +216,29 @@ Example: `sum by (status, kind) (bank_transfers_finished_total)` or
   the file. Edit in the UI, export the JSON (*Export → Export as JSON*) and replace
   `observability/grafana/dashboards/powerbank-overview.json`. Alert rules are read at startup:
   `docker compose restart lgtm`. `GrafanaProvisioningTest` checks that the files fit together.
+- A second dashboard, *PowerBank infrastructure*, shows the Temporal server and Postgres (see below). The
+  dashboards link to each other.
 - If the ledger alert ever fires, this finds the transfer that doesn't sum up to zero:
   `SELECT transfer_id, SUM(amount_cents) FROM postings GROUP BY transfer_id HAVING SUM(amount_cents) <> 0;`
+
+**Infrastructure (Temporal server, Postgres):** the OpenTelemetry Collector inside the LGTM container gets a second
+config file, `observability/otel-collector/infrastructure.yaml` (via `OTELCOL_EXTRA_ARGS` in `compose.yaml`). It adds
+its own pipelines and leaves the image's untouched:
+
+| Source | How | In Grafana |
+| --- | --- | --- |
+| Temporal server metrics | scrapes `temporal:9233/metrics` every 15 s, keeps only requests, errors, latencies, persistence, task queue backlog, completed workflows and goroutines (about 2,000 of 12,000 series) | Prometheus, `job="temporal-server"`, e.g. `approximate_backlog_age_seconds{taskqueue="bank"}` |
+| Postgres metrics | `postgresql` receiver on `pg_stat_*`: connections, commits and rollbacks, row changes, locks, deadlocks, cache hits, table sizes, sequential scans | Prometheus, `job="postgres"`, `postgresql_*` |
+| Postgres logs | JSON log files on the volume `postgres-logs`; slow statements (from 250 ms) and lock waits (from 1 s) included | Loki, `{service_name="postgres"}` |
+| Temporal server logs | its JSON output (warnings and errors) is copied into a file on the `temporal-data` volume | Loki, `{service_name="temporal-server"}` |
+
+- No personal data in these logs either: Postgres logs no statement parameters, and since its JSON format always
+  writes DETAIL (e.g. a failing row with its values), the collector passes on only a few safe fields (severity,
+  error code, backend type, database, session). The app's statements only contain `$1` placeholders; only
+  statements typed by hand in `psql` show their literals in the slow statement log.
+- Some Temporal server "errors" are normal: `WorkflowExecutionAlreadyStarted` (duplicate submission),
+  `NotFound`, `Canceled`, `ConditionFailed`. The persistence alert only looks at real failures.
+- The postgresql receiver uses the `bank` user locally; in production it gets a role with only `pg_monitor`.
 
 **Temporal connection:** `spring.temporal.connection.target` is `localhost:7233`, not the `local` shortcut. With
 `local`, the SDK reported no `temporal_*` metrics in this setup.
@@ -267,7 +294,8 @@ More endpoints:
 
 ```
 domain/          fmodel decider (account) and risk rules: pure business logic, only fmodel + coroutines
-observability/grafana/  dashboard and alert rules, mounted into the LGTM container by compose.yaml
+observability/grafana/  dashboards and alert rules, mounted into the LGTM container by compose.yaml
+observability/otel-collector/  collector config for Temporal server and Postgres metrics and logs
 bank-service/
   ledger/        AccountEventRepository (postings = events), Ledger (transactions, locks), queries
   workflow/      TransferWorkflow
