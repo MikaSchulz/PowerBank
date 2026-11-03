@@ -1,5 +1,7 @@
 # PowerBank: a banking system on Temporal
 
+[![CI](https://github.com/MikaSchulz/PowerBank/actions/workflows/ci.yml/badge.svg)](https://github.com/MikaSchulz/PowerBank/actions/workflows/ci.yml)
+
 Accounts, transfers and (soon) standing orders, running entirely locally. **The ledger is the source of truth**,
 Temporal orchestrates everything that takes time or crosses system boundaries, and **fmodel** makes the business decisions.
 
@@ -27,7 +29,7 @@ Tests (Postgres via Testcontainers, Temporal in memory):
 ./gradlew test
 ```
 
-Without Java 25, Java 21 works too: `./gradlew -PjavaVersion=21 test`.
+Without Java 25, Java 21 works too: `./gradlew -PjavaVersion=21 test`. CI (GitHub Actions) builds and tests every pull request and every push to `main` on Java 25.
 
 ## UI
 
