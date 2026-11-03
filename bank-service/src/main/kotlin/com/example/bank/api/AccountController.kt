@@ -7,6 +7,7 @@ import com.example.bank.ledger.Ledger
 import com.example.bank.ledger.LedgerQueries
 import com.example.bank.ledger.PostingView
 import com.example.bank.ledger.SystemAccounts
+import com.example.bank.observability.BankSpans
 import com.example.bank.workflow.TransferRequest
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -37,6 +38,7 @@ class AccountController(
         val id = AccountId(UUID.randomUUID())
         val result = ledger.openAccount(id, customers.createPlaceholder(), body?.overdraftLimitCents ?: 0)
         require(result.booked) { result.reason ?: "Account could not be opened" }
+        BankSpans.tag(BankSpans.ACCOUNT_ID to id)
         return ResponseEntity.status(HttpStatus.CREATED).body(queries.account(id))
     }
 
@@ -73,6 +75,7 @@ class AccountController(
     fun unblock(@PathVariable accountId: UUID): AccountView = afterCommand(accountId) { ledger.unblockAccount(it) }
 
     private fun afterCommand(accountId: UUID, command: (AccountId) -> com.example.bank.ledger.BookingResult): AccountView {
+        BankSpans.tag(BankSpans.ACCOUNT_ID to accountId)
         val id = AccountId(accountId)
         val result = command(id)
         if (!result.booked) throw ConflictException(result.reason ?: "rejected")

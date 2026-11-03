@@ -95,6 +95,20 @@ http post /api/transfers
   `GET /api/transfers`. The transfer drawer in the UI links straight to the trace in Grafana.
 - Only `/api/` requests are traced; the UI's static files and actuator calls are skipped (`ObservabilityConfig`).
 - `TracePropagationTest` proves all of this with an in-memory span exporter.
+
+**Search traces (TraceQL in Grafana → Explore → Tempo):** spans carry pseudonymous business IDs, never names or IBANs.
+
+| Find | TraceQL |
+| --- | --- |
+| one transfer | `{ span.bank.transfer.id = "<transfer-id>" }` or `{ span.workflowId = "transfer-<transfer-id>" }` |
+| everything that touched an account | `{ span.bank.account.id = "<account-id>" }` (ledger commands) |
+| transfers from or to an account | `{ span.bank.debtor.account.id = "<id>" \|\| span.bank.creditor.account.id = "<id>" }` |
+| rejections and failures at the external bank | `{ name = "bank.external-bank.call" && span.outcome != "accepted" }` |
+| slow lock waits | `{ name = "bank.ledger.lock" && duration > 50ms }` |
+
+The account drawer in the UI links to the account's traces. The external bank call is its own span
+(`bank.external-bank.call`) with `outcome` (accepted, rejected, failure) and `temporal.activity.attempt`; its timer
+`bank_external_bank_call_milliseconds_*{outcome}` counts outcomes in Prometheus.
 - Try it with curl: `-H 'traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01'`, then search for
   that trace ID in Grafana.
 

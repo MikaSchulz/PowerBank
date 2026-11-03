@@ -5,6 +5,7 @@ import com.example.bank.domain.account.AccountKind
 import com.example.bank.domain.risk.RiskVerdict
 import com.example.bank.domain.risk.TransferRiskPolicy
 import com.example.bank.ledger.LedgerQueries
+import com.example.bank.observability.BankSpans
 import com.example.bank.workflow.BANK_TASK_QUEUE
 import io.temporal.spring.boot.ActivityImpl
 import org.springframework.boot.context.properties.ConfigurationProperties
@@ -27,6 +28,7 @@ class RiskActivitiesImpl(
 ) : RiskActivities {
 
     override fun assess(check: RiskCheck): RiskAssessment {
+        BankSpans.tag(BankSpans.TRANSFER_ID to check.transferId, BankSpans.DEBTOR_ACCOUNT_ID to check.debtorAccountId)
         val policy = TransferRiskPolicy(properties.reviewThresholdCents, properties.externalReviewThresholdCents)
         val debtorKind = queries.account(AccountId(check.debtorAccountId))?.kind?.let(AccountKind::valueOf)
         return when (val verdict = policy.assess(check.amountCents, debtorKind, check.external)) {
