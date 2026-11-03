@@ -6,10 +6,17 @@ services:
       POSTGRES_USER: bank
       POSTGRES_PASSWORD: bank   # local only
     ports: ["5432:5432"]
+    volumes:
+      - postgres-data:/var/lib/postgresql
   temporal:
     image: temporalio/temporal:latest
-    command: ["server", "start-dev", "--ip", "0.0.0.0"]
+    # --db-filename: the dev server keeps workflows in SQLite on a volume instead of in memory, so running
+    # transfers survive a restart. Ledger (Postgres) and workflows (Temporal) belong together: reset both at once
+    # with `docker compose down -v`, never only one of them.
+    command: ["server", "start-dev", "--ip", "0.0.0.0", "--db-filename", "/home/temporal/temporal.db"]
     ports: ["7233:7233", "8233:8233"]
+    volumes:
+      - temporal-data:/home/temporal   # the image's user may only write here
   # Grafana with Tempo (traces), Loki (logs) and Prometheus (metrics) in one container.
   # Spring Boot detects the image and sends OTLP traces, metrics and logs to it automatically.
   lgtm:
@@ -23,3 +30,7 @@ services:
       - ./observability/grafana/provisioning/alerting/powerbank.yaml:/otel-lgtm/grafana/conf/provisioning/alerting/powerbank.yaml:ro
       - ./observability/grafana/dashboards:/otel-lgtm/powerbank-dashboards:ro
   # later for stage 9: hashicorp/vault in dev mode
+
+volumes:
+  postgres-data:
+  temporal-data:
