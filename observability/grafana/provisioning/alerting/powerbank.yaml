@@ -41,7 +41,8 @@ groups:
           summary: The sum of all postings is not 0.
           description: >-
             Double-entry bookkeeping is broken: the postings sum up to {{ $values.A.Value }} cents instead of 0.
-            Every transfer must sum up to zero; find it with the query in the README (section Ledger).
+            Every transfer must sum up to zero. Find the one that doesn't:
+            SELECT transfer_id, SUM(amount_cents) FROM postings GROUP BY transfer_id HAVING SUM(amount_cents) <> 0
           __dashboardUid__: powerbank-overview
           __panelId__: "2"
 

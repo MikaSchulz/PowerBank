@@ -30,7 +30,7 @@ docker compose down
 ```
 
 `./gradlew test` needs no containers. `./gradlew integrationTest` needs the running stack. Details in the
-[README](README.md#getting-started).
+[local setup](docs/local-setup.md).
 
 ## Rules
 

@@ -21,7 +21,8 @@ import java.util.concurrent.ThreadLocalRandom
 import kotlin.test.assertTrue
 
 /**
- * Architecture rules as tests: the module boundaries and Temporal's determinism rules from the README's pitfalls.
+ * Architecture rules as tests: the module boundaries and Temporal's determinism rules
+ * described in docs/architecture.md and decision 0003.
  */
 class ArchitectureTest {
 
