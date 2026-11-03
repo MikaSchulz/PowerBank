@@ -10,6 +10,9 @@ updates:
     groups:
       gradle-minor-and-patch:
         update-types: [minor, patch]
+    ignore:
+      # Must match the OpenTelemetry SDK that Spring Boot manages; it is updated together with Spring Boot.
+      - dependency-name: io.opentelemetry.instrumentation:opentelemetry-logback-appender-1.0
 
   - package-ecosystem: github-actions
     directory: /
