@@ -64,18 +64,20 @@ Traces, metrics and logs go via OpenTelemetry (OTLP) to the `grafana/otel-lgtm` 
 Prometheus and Loki. Spring Boot detects the container through Docker Compose and configures the endpoints itself.
 Open Grafana at http://localhost:3000 → *Explore*.
 
-**Traces (Tempo):** one trace per request, from the HTTP call through Temporal into the database:
+**Traces (Tempo):** one trace per user action, from the click in the browser through Temporal into the database:
 
 ```
-http post /api/transfers
-├─ query  INSERT INTO transfers …
-└─ StartWorkflow:TransferWorkflow
-   └─ RunWorkflow:TransferWorkflow
-      ├─ StartActivity:RiskAssess → RunActivity:RiskAssess → query …
-      └─ StartActivity:LedgerBookInternalTransfer → RunActivity:LedgerBookInternalTransfer
-         ├─ bank.ledger.lock      SELECT … FOR UPDATE   ← waiting for the row lock is visible here
-         ├─ bank.account.command  command=Debit         ← the fmodel aggregate: load postings, decide, save
-         └─ bank.account.command  command=Credit
+send transfer                                        ← bank-ui: the click
+└─ HTTP POST                                         ← bank-ui: the fetch call
+   └─ http post /api/transfers                       ← bank-service from here on
+      ├─ query  INSERT INTO transfers …
+      └─ StartWorkflow:TransferWorkflow
+         └─ RunWorkflow:TransferWorkflow
+            ├─ StartActivity:RiskAssess → RunActivity:RiskAssess → query …
+            └─ StartActivity:LedgerBookInternalTransfer → RunActivity:LedgerBookInternalTransfer
+               ├─ bank.ledger.lock      SELECT … FOR UPDATE   ← waiting for the row lock is visible here
+               ├─ bank.account.command  command=Debit         ← the fmodel aggregate: load postings, decide, save
+               └─ bank.account.command  command=Credit
 ```
 
 - The Temporal spans come from the starter's tracing interceptors (`temporal-opentracing` plus the OpenTelemetry
@@ -86,14 +88,16 @@ http post /api/transfers
 
 **W3C trace context (`traceparent`):** one trace ID from the click in the browser down to the SQL.
 
-- The UI sends a fresh `traceparent` with every user action (`00-<trace-id>-<span-id>-01`, sampled). Its polling
-  sends the flag `00` (not sampled), so Tempo only contains what you actually did.
+- Every user action in the UI is the root span of a new trace; each API call in it is a client span whose
+  `traceparent` (`00-<trace-id>-<span-id>-01`, sampled) the backend continues. Its polling sends the flag `00`
+  (not sampled), so Tempo only contains what you actually did.
 - Spring Boot continues an incoming `traceparent`; without one it starts a new trace.
 - Temporal carries the context in the workflow header `_tracer-data` as a W3C `traceparent`, so the workflow and all
   its activities continue the same trace, also after a worker restart.
 - The trace ID is stored with the transfer (`transfers.trace_id`), returned by `POST /api/transfers` and listed by
   `GET /api/transfers`. The transfer drawer in the UI links straight to the trace in Grafana.
-- Only `/api/` requests are traced; the UI's static files and actuator calls are skipped (`ObservabilityConfig`).
+- Only `/api/` requests are traced; the UI's static files, actuator calls and the browser telemetry proxy
+  (`/api/otel/`) are skipped (`ObservabilityConfig`).
 - `TracePropagationTest` proves all of this with an in-memory span exporter.
 
 **Search traces (TraceQL in Grafana → Explore → Tempo):** spans carry pseudonymous business IDs, never names or IBANs.
@@ -111,6 +115,33 @@ The account drawer in the UI links to the account's traces. The external bank ca
 `bank_external_bank_call_milliseconds_*{outcome}` counts outcomes in Prometheus.
 - Try it with curl: `-H 'traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01'`, then search for
   that trace ID in Grafana.
+
+**Browser (`service_name="bank-ui"`):** the UI runs the OpenTelemetry JS SDK (`static/telemetry.js`) and sends
+traces, logs and metrics as OTLP/HTTP to the bank-service, which forwards them unchanged to the collector
+(`POST /api/otel/v1/{traces,logs,metrics}`, `BrowserTelemetryController`). The browser can't reach the collector
+itself (other port, CORS), and in the cloud the proxy is where a login will be required (#36).
+
+| What | Where |
+| --- | --- |
+| user actions (`send transfer`, `approve transfer`, `scenario: burst`, …) with their API calls (`HTTP POST`) | Tempo: `{ resource.service.name = "bank-ui" }` |
+| page load (`documentLoad`, `documentFetch`, `resourceFetch`) | Tempo |
+| `ui_actions_total{action, outcome}` | Prometheus |
+| web vitals: `browser_web_vitals_{lcp,inp,fcp,ttfb}_milliseconds_*`, `browser_web_vitals_cls_*`, each with `rating` | Prometheus (sent every 10 s and when the tab is hidden) |
+| uncaught errors and failed actions, with stack trace, linked to the action's trace | Loki: `{service_name="bank-ui"}` |
+
+- The scenarios are one trace each: *Concurrent burst ×10* shows the ten parallel requests under one root span.
+- If the bundle can't be loaded or `bank.ui.browser-telemetry` is `false`, the UI keeps working and only sends a
+  plain `traceparent` header.
+- Configuration (`bank.ui.*`, all optional): `grafana-url` and `temporal-ui-url` (the links in the UI, served by
+  `GET /api/ui-config`), `browser-telemetry`, and `otlp.traces-url`, `otlp.logs-url`, `otlp.metrics-url` to override
+  the collector endpoints that Spring Boot already knows.
+- The OpenTelemetry library is vendored as one ES module (`static/vendor/otel-web.js`, about 130 KB), so the UI
+  needs no CDN and no Node.js at runtime. The exact versions are pinned in `src/main/ui-telemetry/package.json`.
+  To update or rebuild it:
+
+  ```bash
+  cd bank-service/src/main/ui-telemetry && npm ci && npm run build
+  ```
 
 **Metrics (Prometheus):**
 
@@ -193,8 +224,10 @@ bank-service/
   activities/    LedgerActivities, RiskActivities, ExternalBankActivities
   externalbank/  external bank simulator: slow, fails technically, sometimes rejects
   api/           REST
-  config/        Temporal data converter, OpenTelemetry log appender
-  resources/static/  the UI (HTML, CSS, JS)
+  config/        Temporal data converter, OpenTelemetry log appender, which requests get traced
+  observability/ span attributes, UI config, OTLP proxy for the browser
+  resources/static/  the UI (HTML, CSS, JS); telemetry.js and vendor/otel-web.js for browser telemetry
+  ui-telemetry/  build of the vendored OpenTelemetry bundle (npm + esbuild, not part of the Gradle build)
 ```
 
 **How a transfer works** (`TransferWorkflow`, workflow ID `transfer-<transferId>`):

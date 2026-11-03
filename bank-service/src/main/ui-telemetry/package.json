@@ -1,0 +1,26 @@
+{
+  "name": "powerbank-ui-telemetry",
+  "private": true,
+  "description": "Builds the vendored OpenTelemetry browser bundle used by the UI (../resources/static/vendor/otel-web.js). Rebuild: npm ci && npm run build",
+  "type": "module",
+  "scripts": {
+    "build": "esbuild entry.js --bundle --format=esm --platform=browser --target=es2022 --minify --legal-comments=eof --outfile=../resources/static/vendor/otel-web.js"
+  },
+  "dependencies": {
+    "@opentelemetry/api": "1.10.0",
+    "@opentelemetry/core": "3.0.0",
+    "@opentelemetry/resources": "3.0.0",
+    "@opentelemetry/sdk-trace": "3.0.0",
+    "@opentelemetry/exporter-trace-otlp-http": "0.300.0",
+    "@opentelemetry/sdk-logs": "3.0.0",
+    "@opentelemetry/exporter-logs-otlp-http": "0.300.0",
+    "@opentelemetry/sdk-metrics": "3.0.0",
+    "@opentelemetry/exporter-metrics-otlp-http": "0.300.0",
+    "@opentelemetry/instrumentation": "0.300.0",
+    "@opentelemetry/instrumentation-document-load": "0.69.0",
+    "web-vitals": "6.2.3"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}
