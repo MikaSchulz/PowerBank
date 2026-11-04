@@ -1,0 +1,498 @@
+{
+  "events": [
+    {
+      "eventId": "1",
+      "eventTime": "2026-11-04T21:58:07.379Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_STARTED",
+      "workflowExecutionStartedEventAttributes": {
+        "workflowType": {
+          "name": "TransferWorkflow"
+        },
+        "taskQueue": {
+          "name": "bank"
+        },
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJ0cmFuc2ZlcklkIjoiMGIxM2ZlYjctYTE4Yy00ZDc4LTgzNjMtYTk2MzdiZjRkNDRmIiwiZGVidG9yQWNjb3VudElkIjoiOThlOTE2NTMtMGE2Ny00ZTAxLTk3N2YtMmU2MWY3ZDk1ODI3IiwiYW1vdW50Q2VudHMiOjUwMDAsImNyZWRpdG9yQWNjb3VudElkIjpudWxsLCJjcmVkaXRvckliYW4iOiJERTg5MzcwNDAwNDQwNTMyMDEzMDAwIn0\u003d"
+            }
+          ]
+        },
+        "workflowExecutionTimeout": "315360000s",
+        "workflowRunTimeout": "315360000s",
+        "workflowTaskTimeout": "10s",
+        "originalExecutionRunId": "033170b8-adff-4f7e-aa33-7bd636ee2da6",
+        "identity": "700@vm",
+        "firstExecutionRunId": "033170b8-adff-4f7e-aa33-7bd636ee2da6",
+        "attempt": 1,
+        "firstWorkflowTaskBackoff": "0s",
+        "header": {}
+      }
+    },
+    {
+      "eventId": "2",
+      "eventTime": "2026-11-04T21:58:07.379Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "bank"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "3",
+      "eventTime": "2026-11-04T21:58:07.379Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "2",
+        "identity": "700@vm",
+        "historySizeBytes": "424"
+      }
+    },
+    {
+      "eventId": "4",
+      "eventTime": "2026-11-04T21:58:07.386Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "2",
+        "identity": "700@vm",
+        "sdkMetadata": {
+          "langUsedFlags": [
+            1,
+            3
+          ],
+          "sdkName": "temporal-java",
+          "sdkVersion": "1.40.0"
+        },
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "5",
+      "eventTime": "2026-11-04T21:58:07.386Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "39332f07-35f3-3fbd-9845-1172d8ae1fac",
+        "activityType": {
+          "name": "RiskAssess"
+        },
+        "taskQueue": {
+          "name": "bank"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJ0cmFuc2ZlcklkIjoiMGIxM2ZlYjctYTE4Yy00ZDc4LTgzNjMtYTk2MzdiZjRkNDRmIiwiZGVidG9yQWNjb3VudElkIjoiOThlOTE2NTMtMGE2Ny00ZTAxLTk3N2YtMmU2MWY3ZDk1ODI3IiwiYW1vdW50Q2VudHMiOjUwMDAsImV4dGVybmFsIjp0cnVlfQ\u003d\u003d"
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "315360000s",
+        "scheduleToStartTimeout": "315360000s",
+        "startToCloseTimeout": "5s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "3",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2.0,
+          "maximumInterval": "100s"
+        }
+      }
+    },
+    {
+      "eventId": "6",
+      "eventTime": "2026-11-04T21:58:07.387Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "5",
+        "identity": "700@vm",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "7",
+      "eventTime": "2026-11-04T21:58:07.390Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJyZXZpZXdSZXF1aXJlZCI6ZmFsc2UsInJlYXNvbiI6bnVsbH0\u003d"
+            }
+          ]
+        },
+        "scheduledEventId": "5",
+        "startedEventId": "6",
+        "identity": "700@vm"
+      }
+    },
+    {
+      "eventId": "8",
+      "eventTime": "2026-11-04T21:58:07.390Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "bank"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "9",
+      "eventTime": "2026-11-04T21:58:07.391Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "8",
+        "identity": "700@vm",
+        "historySizeBytes": "990"
+      }
+    },
+    {
+      "eventId": "10",
+      "eventTime": "2026-11-04T21:58:07.396Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "8",
+        "identity": "700@vm",
+        "sdkMetadata": {
+          "sdkName": "temporal-java",
+          "sdkVersion": "1.40.0"
+        },
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "11",
+      "eventTime": "2026-11-04T21:58:07.396Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "d98323a2-d1f5-35ae-873b-b3fcec688a91",
+        "activityType": {
+          "name": "LedgerDebitForExternalTransfer"
+        },
+        "taskQueue": {
+          "name": "bank"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJ0cmFuc2ZlcklkIjoiMGIxM2ZlYjctYTE4Yy00ZDc4LTgzNjMtYTk2MzdiZjRkNDRmIiwiZGVidG9yQWNjb3VudElkIjoiOThlOTE2NTMtMGE2Ny00ZTAxLTk3N2YtMmU2MWY3ZDk1ODI3IiwiYW1vdW50Q2VudHMiOjUwMDB9"
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "315360000s",
+        "scheduleToStartTimeout": "315360000s",
+        "startToCloseTimeout": "10s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "9",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2.0,
+          "maximumInterval": "30s"
+        }
+      }
+    },
+    {
+      "eventId": "12",
+      "eventTime": "2026-11-04T21:58:07.396Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "11",
+        "identity": "700@vm",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "13",
+      "eventTime": "2026-11-04T21:58:07.401Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJzdGF0dXMiOiJTRU5UX1RPX0VYVEVSTkFMX0JBTksiLCJyZWFzb24iOm51bGx9"
+            }
+          ]
+        },
+        "scheduledEventId": "11",
+        "startedEventId": "12",
+        "identity": "700@vm"
+      }
+    },
+    {
+      "eventId": "14",
+      "eventTime": "2026-11-04T21:58:07.401Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "bank"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "15",
+      "eventTime": "2026-11-04T21:58:07.401Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "14",
+        "identity": "700@vm",
+        "historySizeBytes": "1566"
+      }
+    },
+    {
+      "eventId": "16",
+      "eventTime": "2026-11-04T21:58:07.410Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "14",
+        "identity": "700@vm",
+        "sdkMetadata": {
+          "sdkName": "temporal-java",
+          "sdkVersion": "1.40.0"
+        },
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "17",
+      "eventTime": "2026-11-04T21:58:07.410Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "211eb927-b7c1-3af3-966a-2c3141b6b3cc",
+        "activityType": {
+          "name": "ExternalBankSubmitPayment"
+        },
+        "taskQueue": {
+          "name": "bank"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJ0cmFuc2ZlcklkIjoiMGIxM2ZlYjctYTE4Yy00ZDc4LTgzNjMtYTk2MzdiZjRkNDRmIiwiY3JlZGl0b3JJYmFuIjoiREU4OTM3MDQwMDQ0MDUzMjAxMzAwMCIsImFtb3VudENlbnRzIjo1MDAwfQ\u003d\u003d"
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "600s",
+        "scheduleToStartTimeout": "600s",
+        "startToCloseTimeout": "30s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "15",
+        "retryPolicy": {
+          "initialInterval": "2s",
+          "backoffCoefficient": 2.0,
+          "maximumInterval": "60s"
+        }
+      }
+    },
+    {
+      "eventId": "18",
+      "eventTime": "2026-11-04T21:58:07.410Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "17",
+        "identity": "700@vm",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "19",
+      "eventTime": "2026-11-04T21:58:07.413Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJhY2NlcHRlZCI6ZmFsc2UsInJlYXNvbiI6IkNyZWRpdG9yIGFjY291bnQgY2xvc2VkIn0\u003d"
+            }
+          ]
+        },
+        "scheduledEventId": "17",
+        "startedEventId": "18",
+        "identity": "700@vm"
+      }
+    },
+    {
+      "eventId": "20",
+      "eventTime": "2026-11-04T21:58:07.413Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "bank"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "21",
+      "eventTime": "2026-11-04T21:58:07.413Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "20",
+        "identity": "700@vm",
+        "historySizeBytes": "2118"
+      }
+    },
+    {
+      "eventId": "22",
+      "eventTime": "2026-11-04T21:58:07.422Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "20",
+        "identity": "700@vm",
+        "sdkMetadata": {
+          "sdkName": "temporal-java",
+          "sdkVersion": "1.40.0"
+        },
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "23",
+      "eventTime": "2026-11-04T21:58:07.422Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "36682dab-e22b-3153-82ea-28ee2beebd37",
+        "activityType": {
+          "name": "LedgerRefundExternalTransfer"
+        },
+        "taskQueue": {
+          "name": "bank"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJ0cmFuc2ZlcklkIjoiMGIxM2ZlYjctYTE4Yy00ZDc4LTgzNjMtYTk2MzdiZjRkNDRmIiwicmVhc29uIjoiQ3JlZGl0b3IgYWNjb3VudCBjbG9zZWQifQ\u003d\u003d"
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "315360000s",
+        "scheduleToStartTimeout": "315360000s",
+        "startToCloseTimeout": "10s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "21",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2.0,
+          "maximumInterval": "30s"
+        }
+      }
+    },
+    {
+      "eventId": "24",
+      "eventTime": "2026-11-04T21:58:07.423Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "23",
+        "identity": "700@vm",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "25",
+      "eventTime": "2026-11-04T21:58:07.426Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJzdGF0dXMiOiJSRUZVTkRFRCIsInJlYXNvbiI6IkNyZWRpdG9yIGFjY291bnQgY2xvc2VkIn0\u003d"
+            }
+          ]
+        },
+        "scheduledEventId": "23",
+        "startedEventId": "24",
+        "identity": "700@vm"
+      }
+    },
+    {
+      "eventId": "26",
+      "eventTime": "2026-11-04T21:58:07.426Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "bank"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "27",
+      "eventTime": "2026-11-04T21:58:07.426Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "26",
+        "identity": "700@vm",
+        "historySizeBytes": "2656"
+      }
+    },
+    {
+      "eventId": "28",
+      "eventTime": "2026-11-04T21:58:07.435Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "26",
+        "identity": "700@vm",
+        "sdkMetadata": {
+          "sdkName": "temporal-java",
+          "sdkVersion": "1.40.0"
+        },
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "29",
+      "eventTime": "2026-11-04T21:58:07.435Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED",
+      "workflowExecutionCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJ0cmFuc2ZlcklkIjoiMGIxM2ZlYjctYTE4Yy00ZDc4LTgzNjMtYTk2MzdiZjRkNDRmIiwic3RhdHVzIjoiUkVGVU5ERUQiLCJhbW91bnRDZW50cyI6NTAwMCwiZXh0ZXJuYWwiOnRydWUsInJlYXNvbiI6IkNyZWRpdG9yIGFjY291bnQgY2xvc2VkIn0\u003d"
+            }
+          ]
+        },
+        "workflowTaskCompletedEventId": "27"
+      }
+    }
+  ]
+}
