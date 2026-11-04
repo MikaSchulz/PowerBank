@@ -67,6 +67,12 @@ class TransferWorkflowImpl : TransferWorkflow {
 
     private var decision: ApprovalDecision? = null
 
+    /**
+     * True from the moment the risk check asks for a review until the ledger has recorded the decision. Set before the
+     * ledger shows AWAITING_APPROVAL, so an approval sent right after the UI saw that status is never refused.
+     */
+    private var approvalPending = false
+
     /** Replay-aware: does not log again while Temporal replays the history. Only IDs and statuses, never the IBAN. */
     private val log = Workflow.getLogger(TransferWorkflowImpl::class.java)
 
@@ -89,6 +95,7 @@ class TransferWorkflowImpl : TransferWorkflow {
     private fun process(request: TransferRequest, external: Boolean) {
         val assessment = risk.assess(RiskCheck(request.transferId, request.debtorAccountId, request.amountCents, external))
         if (assessment.reviewRequired) {
+            approvalPending = true
             outcome = ledger.requireApproval(ApprovalRequest(request.transferId, assessment.reason))
             log.info("Transfer {} awaits approval", request.transferId)
             awaitApproval(request)
@@ -112,6 +119,7 @@ class TransferWorkflowImpl : TransferWorkflow {
         } else {
             ledger.expireApproval(request.transferId)
         }
+        approvalPending = false
     }
 
     /**
@@ -172,15 +180,13 @@ class TransferWorkflowImpl : TransferWorkflow {
     }
 
     override fun validateApprove(decision: ApprovalDecision) {
-        check(outcome.status == TransferStatus.AWAITING_APPROVAL && this.decision == null) {
-            "Transfer is not awaiting approval"
-        }
+        check(approvalPending && this.decision == null) { "Transfer is not awaiting approval" }
     }
 
-    /** The handler only records the decision; the main method processes it. */
+    /** The handler only records the decision; the main method processes it. Returns once the ledger has recorded it. */
     override fun approve(decision: ApprovalDecision): TransferState {
         this.decision = decision
-        Workflow.await { outcome.status != TransferStatus.AWAITING_APPROVAL }
+        Workflow.await { !approvalPending }
         return status()
     }
 
