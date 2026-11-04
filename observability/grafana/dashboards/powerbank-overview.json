@@ -38,7 +38,7 @@
       "icon": "external link",
       "targetBlank": true,
       "keepTime": false,
-      "url": "/explore?schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22tempo%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22tempo%22%2C%22uid%22%3A%22tempo%22%7D%2C%22query%22%3A%22%7B%20resource.service.name%20%3D~%20%5C%22bank-ui%7Cbank-service%5C%22%20%7D%22%2C%22queryType%22%3A%22traceql%22%7D%5D%2C%22range%22%3A%7B%22from%22%3A%22now-1h%22%2C%22to%22%3A%22now%22%7D%7D%7D"
+      "url": "/explore?schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22tempo%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22tempo%22%2C%22uid%22%3A%22tempo%22%7D%2C%22query%22%3A%22%7B%20resource.service.name%20%3D~%20%5C%22bank-.*%5C%22%20%7D%22%2C%22queryType%22%3A%22traceql%22%7D%5D%2C%22range%22%3A%7B%22from%22%3A%22now-1h%22%2C%22to%22%3A%22now%22%7D%7D%7D"
     },
     {
       "title": "Logs (Loki)",
@@ -46,7 +46,7 @@
       "icon": "external link",
       "targetBlank": true,
       "keepTime": false,
-      "url": "/explore?schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22loki%22%7D%2C%22expr%22%3A%22%7Bservice_name%3D~%5C%22bank-service%7Cbank-ui%5C%22%7D%22%2C%22queryType%22%3A%22range%22%7D%5D%2C%22range%22%3A%7B%22from%22%3A%22now-1h%22%2C%22to%22%3A%22now%22%7D%7D%7D"
+      "url": "/explore?schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22loki%22%7D%2C%22expr%22%3A%22%7Bservice_name%3D~%5C%22bank-.*%5C%22%7D%22%2C%22queryType%22%3A%22range%22%7D%5D%2C%22range%22%3A%7B%22from%22%3A%22now-1h%22%2C%22to%22%3A%22now%22%7D%7D%7D"
     },
     {
       "title": "Alert rules",
@@ -1615,7 +1615,7 @@
     {
       "type": "logs",
       "id": 28,
-      "title": "Warnings and errors (bank-service, bank-ui)",
+      "title": "Warnings and errors (banks and their UI)",
       "description": "From Loki. Expand a line and use the trace ID to open its trace.",
       "datasource": {
         "type": "loki",
@@ -1635,7 +1635,7 @@
             "uid": "loki"
           },
           "queryType": "range",
-          "expr": "{service_name=~\"bank-service|bank-ui\"} | severity_text=~\"WARN|ERROR\""
+          "expr": "{service_name=~\"bank-.*\"} | severity_text=~\"WARN|ERROR\""
         }
       ],
       "options": {

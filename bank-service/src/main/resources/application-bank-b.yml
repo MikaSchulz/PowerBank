@@ -1,0 +1,22 @@
+# Bank B: the same bank-service as a second, separate bank (#55). Its own identity, Postgres schema and Temporal
+# namespace (created by compose.yaml), next to bank A in the same containers:
+#   ./gradlew :bank-service:bootRun --args='--spring.profiles.active=bank-b'      (or: docker compose --profile bank-b up -d)
+# UI: http://localhost:8081
+spring:
+  application:
+    name: bank-b
+  datasource:
+    url: jdbc:postgresql://localhost:5432/bank?currentSchema=bank_b
+  flyway:
+    schemas: bank_b   # created by Flyway, with its own migration history
+  temporal:
+    namespace: bank-b
+
+server:
+  port: 8081
+
+bank:
+  identity:
+    name: Partner Bank
+    bic: PTNRDEFFXXX
+    bank-code: "99000002"

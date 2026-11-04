@@ -5,8 +5,10 @@ import { action as traced, initTelemetry, startRequest } from './telemetry.js';
 // Overridden from /api/ui-config at startup (bank.ui.* properties), so nothing is tied to localhost.
 let TEMPORAL_UI = 'http://localhost:8233';
 let GRAFANA = 'http://localhost:3000';
+let TEMPORAL_NAMESPACE = 'default';
 const CASH = '00000000-0000-0000-0000-000000000001';
 const CLEARING = '00000000-0000-0000-0000-000000000002';
+const SETTLEMENT = '00000000-0000-0000-0000-000000000003';
 const POLL_MS = 1500;
 const TERMINAL = new Set(['BOOKED', 'COMPLETED', 'REFUNDED', 'REJECTED']);
 
@@ -125,6 +127,7 @@ function label(id) {
   if (!id) return 'External bank';
   if (id === CASH) return 'Cash desk';
   if (id === CLEARING) return 'External clearing';
+  if (id === SETTLEMENT) return 'Settlement (central bank)';
   return nicknames()[id] || `Account ${short(id).slice(0, 4).toUpperCase()}`;
 }
 
@@ -329,7 +332,7 @@ function renderAccounts() {
         <button class="account-card ${state.accountFilter === a.id ? 'selected' : ''}" data-open-account="${a.id}">
           <div class="ac-top">
             <span class="avatar" style="--hue:${hue(a.id)}">${esc((nicknames()[a.id] || a.id).charAt(0).toUpperCase())}</span>
-            <span class="ac-name"><strong>${esc(name)}</strong><span class="mono">${short(a.id)}</span></span>
+            <span class="ac-name"><strong>${esc(name)}</strong><span class="mono">${a.iban ? esc(formatIban(a.iban)) : short(a.id)}</span></span>
             ${statusChip(a.status)}
           </div>
           <div class="ac-balance ${a.balanceCents < 0 ? 'negative' : ''}">${esc(money(a.balanceCents))}</div>
@@ -478,7 +481,7 @@ function transferDetails(id) {
   if (!t.kind && live) t.kind = live.external ? 'EXTERNAL' : 'INTERNAL';
   const info = STATUS[t.status] || { label: t.status || 'Loading…', explain: '' };
   const postings = state.drawerData?.postings || [];
-  const temporalLink = `${TEMPORAL_UI}/namespaces/default/workflows?query=${encodeURIComponent(`WorkflowId="transfer-${id}"`)}`;
+  const temporalLink = `${TEMPORAL_UI}/namespaces/${encodeURIComponent(TEMPORAL_NAMESPACE)}/workflows?query=${encodeURIComponent(`WorkflowId="transfer-${id}"`)}`;
   const traceId = t.traceId || state.traceIds.get(id);
 
   return `
@@ -604,6 +607,7 @@ function accountDetails(id) {
     <div class="d-route"><strong>${esc(label(id))}</strong> ${statusChip(account.status)}</div>
     <dl class="d-grid">
       <dt>Account ID</dt><dd class="mono">${esc(id)}</dd>
+      ${account.iban ? `<dt>IBAN</dt><dd class="mono">${esc(formatIban(account.iban))}</dd>` : ''}
       ${system ? '' : `<dt>Overdraft</dt><dd>${esc(money(account.overdraftLimitCents))}</dd>
       <dt>Available</dt><dd>${esc(money(account.balanceCents + account.overdraftLimitCents))}</dd>`}
     </dl>
@@ -977,6 +981,11 @@ async function loadConfig() {
   if (!result.ok) return { browserTelemetry: false };
   GRAFANA = result.data.grafanaUrl;
   TEMPORAL_UI = result.data.temporalUiUrl;
+  TEMPORAL_NAMESPACE = result.data.temporalNamespace || 'default';
+  // Bank A and bank B run side by side: the header says which one this is.
+  $('#bank-name').textContent = result.data.bankName;
+  $('#bank-bic').textContent = `BIC ${result.data.bic} · Temporal banking lab`;
+  document.title = result.data.bankName;
   $('#temporal-link').href = TEMPORAL_UI;
   $('#grafana-link').href = GRAFANA;
   return result.data;

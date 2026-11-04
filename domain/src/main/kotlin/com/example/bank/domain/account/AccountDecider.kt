@@ -25,7 +25,9 @@ internal fun decide(c: AccountCommand, s: Account): Flow<AccountEvent> = when (c
         s.exists -> reject(c, "Account already exists")
         c.overdraftLimitCents < 0 -> reject(c, "Overdraft limit must not be negative")
         c.kind == AccountKind.CUSTOMER && c.customerId == null -> reject(c, "Customer account requires a customer")
-        else -> flowOf(AccountOpened(c.accountId, c.customerId, c.kind, c.overdraftLimitCents))
+        c.kind == AccountKind.CUSTOMER && c.iban == null -> reject(c, "Customer account requires an IBAN")
+        c.kind == AccountKind.SYSTEM && c.iban != null -> reject(c, "System accounts have no IBAN")
+        else -> flowOf(AccountOpened(c.accountId, c.customerId, c.kind, c.overdraftLimitCents, c.iban))
     }
 
     is Debit -> when {
@@ -88,6 +90,7 @@ internal fun evolve(s: Account, e: AccountEvent): Account = when (e) {
         customerId = e.customerId,
         kind = e.kind,
         overdraftLimitCents = e.overdraftLimitCents,
+        iban = e.iban,
     )
     is PostingEvent -> s.copy(balanceCents = s.balanceCents + e.signedAmountCents)
     is AccountBlocked -> s.copy(status = AccountStatus.BLOCKED)

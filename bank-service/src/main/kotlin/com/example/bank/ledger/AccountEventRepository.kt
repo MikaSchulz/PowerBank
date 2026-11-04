@@ -2,6 +2,7 @@ package com.example.bank.ledger
 
 import com.example.bank.domain.AccountId
 import com.example.bank.domain.CustomerId
+import com.example.bank.domain.Iban
 import com.example.bank.domain.TransferId
 import com.example.bank.domain.account.AccountBlocked
 import com.example.bank.domain.account.AccountClosed
@@ -40,7 +41,7 @@ class AccountEventRepository(private val jdbc: JdbcClient) : EventRepository<Acc
 
     override fun AccountCommand.fetchEvents(): Flow<AccountEvent> = flow {
         val row = lockAccount(accountId) ?: return@flow
-        emit(AccountOpened(accountId, row.customerId, row.kind, row.overdraftLimitCents))
+        emit(AccountOpened(accountId, row.customerId, row.kind, row.overdraftLimitCents, row.iban))
         when (row.status) {
             AccountStatus.BLOCKED -> emit(AccountBlocked(accountId))
             AccountStatus.CLOSED -> emit(AccountClosed(accountId))
@@ -52,7 +53,7 @@ class AccountEventRepository(private val jdbc: JdbcClient) : EventRepository<Acc
     override fun Flow<AccountEvent>.save(): Flow<AccountEvent> = onEach(::persist)
 
     private fun lockAccount(id: AccountId): AccountRow? =
-        jdbc.sql("SELECT customer_id, status, kind, overdraft_limit_cents FROM accounts WHERE id = :id FOR UPDATE")
+        jdbc.sql("SELECT customer_id, status, kind, overdraft_limit_cents, iban FROM accounts WHERE id = :id FOR UPDATE")
             .param("id", id.value)
             .query { rs, _ ->
                 AccountRow(
@@ -60,6 +61,7 @@ class AccountEventRepository(private val jdbc: JdbcClient) : EventRepository<Acc
                     status = AccountStatus.valueOf(rs.getString("status")),
                     kind = AccountKind.valueOf(rs.getString("kind")),
                     overdraftLimitCents = rs.getLong("overdraft_limit_cents"),
+                    iban = rs.getString("iban")?.let(Iban::parse),
                 )
             }
             .optional()
@@ -77,14 +79,15 @@ class AccountEventRepository(private val jdbc: JdbcClient) : EventRepository<Acc
         when (event) {
             is AccountOpened -> jdbc.sql(
                 """
-                INSERT INTO accounts (id, customer_id, status, kind, overdraft_limit_cents)
-                VALUES (:id, :customerId, 'OPEN', :kind, :overdraft)
+                INSERT INTO accounts (id, customer_id, status, kind, overdraft_limit_cents, iban)
+                VALUES (:id, :customerId, 'OPEN', :kind, :overdraft, :iban)
                 """,
             )
                 .param("id", event.accountId.value)
                 .param("customerId", event.customerId?.value)
                 .param("kind", event.kind.name)
                 .param("overdraft", event.overdraftLimitCents)
+                .param("iban", event.iban?.value)
                 .update()
 
             is PostingEvent -> jdbc.sql(
@@ -119,6 +122,7 @@ class AccountEventRepository(private val jdbc: JdbcClient) : EventRepository<Acc
         val status: AccountStatus,
         val kind: AccountKind,
         val overdraftLimitCents: Long,
+        val iban: Iban?,
     )
 
     companion object {

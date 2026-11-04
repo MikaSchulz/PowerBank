@@ -5,7 +5,8 @@
 Open **http://localhost:8080** once the app is running. The UI is a plain HTML/JS page served by the bank-service
 (`bank-service/src/main/resources/static`), no build step.
 
-- **Accounts:** open accounts, deposit, block and unblock, see every posting with the running balance.
+- **Accounts:** open accounts (each gets an IBAN), deposit, block and unblock, see every posting with the running
+  balance. The header shows which bank the UI belongs to (bank A or bank B, see [local setup](local-setup.md)).
   Nicknames like "Alice" only live in your browser (localStorage): the bank itself only knows pseudonymous IDs.
 - **Transfers:** internal, to an external bank, or as a cash deposit. Each one opens a drawer with its business
   status, an explanation of what Temporal is doing right now, its history and postings in the ledger and a link to the

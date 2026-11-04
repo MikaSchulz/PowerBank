@@ -1,7 +1,9 @@
 package com.example.bank.ledger
 
+import com.example.bank.config.BankIdentity
 import com.example.bank.domain.AccountId
 import com.example.bank.domain.CustomerId
+import com.example.bank.domain.Iban
 import com.example.bank.domain.TransferId
 import com.example.bank.domain.account.Account
 import com.example.bank.domain.account.AccountCommand
@@ -74,10 +76,17 @@ class Ledger(
     private val jdbc: JdbcClient,
     private val tx: TransactionTemplate,
     private val observations: ObservationRegistry,
+    private val identity: BankIdentity,
 ) {
 
-    fun openAccount(accountId: AccountId, customerId: CustomerId, overdraftLimitCents: Long = 0): BookingResult =
-        accountCommand(OpenAccount(accountId, customerId, AccountKind.CUSTOMER, overdraftLimitCents))
+    /** Opens a customer account with the next IBAN of this bank. */
+    fun openAccount(accountId: AccountId, customerId: CustomerId, overdraftLimitCents: Long = 0): BookingResult = inTransaction {
+        val iban = Iban.german(identity.bankCode, nextAccountNumber())
+        accountCommand(OpenAccount(accountId, customerId, AccountKind.CUSTOMER, overdraftLimitCents, iban))
+    }
+
+    // From a sequence: unique without locks. Numbers of a rolled-back opening are skipped, as in a real bank.
+    private fun nextAccountNumber(): Long = jdbc.sql("SELECT nextval('account_number_seq')").query(Long::class.java).single()
 
     fun blockAccount(accountId: AccountId) = accountCommand(BlockAccount(accountId))
 

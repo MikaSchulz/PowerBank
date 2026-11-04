@@ -1,5 +1,6 @@
 package com.example.bank.observability
 
+import com.example.bank.config.BankIdentity
 import com.sun.net.httpserver.HttpServer
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.BeforeEach
@@ -27,7 +28,7 @@ import kotlin.test.assertTrue
 class BrowserTelemetryProxyTest @Autowired constructor(private val mvc: MockMvc) {
 
     @TestConfiguration(proxyBeanMethods = false)
-    @EnableConfigurationProperties(UiProperties::class)
+    @EnableConfigurationProperties(UiProperties::class, BankIdentity::class)
     class Properties
 
     @BeforeEach
@@ -97,12 +98,15 @@ class BrowserTelemetryProxyTest @Autowired constructor(private val mvc: MockMvc)
     }
 
     @Test
-    fun `the UI gets the tool URLs and the telemetry switch`() {
+    fun `the UI gets the tool URLs, the telemetry switch and which bank it belongs to`() {
         mvc.get("/api/ui-config").andExpect {
             status { isOk() }
             jsonPath("$.grafanaUrl") { value("http://localhost:3000") }
             jsonPath("$.temporalUiUrl") { value("http://localhost:8233") }
+            jsonPath("$.temporalNamespace") { value("default") }
             jsonPath("$.browserTelemetry") { value(true) }
+            jsonPath("$.bankName") { value("PowerBank") }
+            jsonPath("$.bic") { value("PWRBDEFFXXX") }
         }
     }
 

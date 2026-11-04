@@ -117,7 +117,7 @@ Example: `sum by (status, kind) (bank_transfers_finished_total)` or
 console as usual, plus every log event via OTLP. Temporal puts `WorkflowId`, `RunId`,
 `ActivityType`, `Attempt` and `TaskQueue` into the MDC, so each log line carries them as attributes together with
 `trace_id`. In Grafana, *Related logs* on a trace jumps to its logs. Query example:
-`{service_name="bank-service"} | WorkflowId = "transfer-<id>"`.
+`{service_name="bank-a"} | WorkflowId = "transfer-<id>"`. Every bank is its own service: `bank-a`, and `bank-b` for the second bank (#57).
 
 - In workflows, log with `Workflow.getLogger(...)`: it does not log again while a workflow is replayed.
 - Logs and spans only contain pseudonymous IDs (transfer, account), never names, IBANs, amounts or balances. Metrics

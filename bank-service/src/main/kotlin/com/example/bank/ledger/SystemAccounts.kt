@@ -10,4 +10,7 @@ object SystemAccounts {
 
     /** Clearing account for transfers to external banks. */
     val EXTERNAL_CLEARING = AccountId(UUID.fromString("00000000-0000-0000-0000-000000000002"))
+
+    /** The bank's account at the clearing house, in central bank money (#58). */
+    val SETTLEMENT = AccountId(UUID.fromString("00000000-0000-0000-0000-000000000003"))
 }

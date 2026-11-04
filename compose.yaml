@@ -53,8 +53,8 @@ services:
     image: temporalio/temporal:1.9.1   # CLI 1.9.1 with server 1.32.0
     # --db-filename: the dev server keeps workflows in SQLite on a volume instead of in memory, so running
     # transfers survive a restart. Ledger (Postgres) and workflows (Temporal) belong together: reset both at once
-    # with `docker compose down -v`, never only one of them. The namespace integration-test keeps the workflows of
-    # ./gradlew integrationTest apart from the app's (namespace default).
+    # with `docker compose down -v`, never only one of them. Namespaces keep workflows apart: default for bank A,
+    # bank-b for the second bank (#57), integration-test for ./gradlew integrationTest.
     # The server logs only to stdout; a pipe copies its JSON output to a file the collector reads. `exec` keeps the
     # server as the main process, so it still shuts down cleanly on `docker compose stop`.
     entrypoint: ["/bin/sh", "-c"]
@@ -64,7 +64,7 @@ services:
         rm -f /tmp/log.pipe && mkfifo /tmp/log.pipe
         tee -a /home/temporal/logs/temporal.log < /tmp/log.pipe &
         exec temporal server start-dev --ip 0.0.0.0 --db-filename /home/temporal/temporal.db \
-          --namespace integration-test --metrics-port 9233 --log-format json > /tmp/log.pipe 2>&1
+          --namespace bank-b --namespace integration-test --metrics-port 9233 --log-format json > /tmp/log.pipe 2>&1
     ports: ["7233:7233", "8233:8233"]
     healthcheck:
       test: ["CMD", "temporal", "operator", "cluster", "health"]
@@ -136,6 +136,38 @@ services:
     depends_on:
       bank-service:
         condition: service_healthy
+
+  # --- Bank B: the same bank-service as a second, separate bank (#55, application-bank-b.yml) -----------------------
+  #   docker compose --profile bank-b up -d --build --wait    UI: http://localhost:8081
+  # Its own Postgres schema (bank_b) and Temporal namespace (bank-b), next to bank A in the same containers.
+  # For development, bootRun works too: ./gradlew :bank-service:bootRun --args='--spring.profiles.active=bank-b'
+  bank-b:
+    profiles: [bank-b]
+    build:
+      context: .
+      dockerfile: bank-service/Dockerfile
+    image: powerbank/bank-service:local
+    ports: ["8081:8081"]
+    environment:
+      SPRING_PROFILES_ACTIVE: bank-b
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/bank?currentSchema=bank_b
+      SPRING_TEMPORAL_CONNECTION_TARGET: temporal:7233
+      MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT: http://lgtm:4318/v1/traces
+      MANAGEMENT_OPENTELEMETRY_LOGGING_EXPORT_OTLP_ENDPOINT: http://lgtm:4318/v1/logs
+      MANAGEMENT_OTLP_METRICS_EXPORT_URL: http://lgtm:4318/v1/metrics
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8081 && printf 'GET /actuator/health HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q UP <&3"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+      start_period: 20s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      temporal:
+        condition: service_healthy
+      lgtm:
+        condition: service_started
 
   # later for stage 9: hashicorp/vault in dev mode
 

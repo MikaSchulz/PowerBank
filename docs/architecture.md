@@ -136,7 +136,17 @@ sequenceDiagram
   the unique constraint `(transfer_id, account_id, leg)`.
 - `transfers.status` is the current business status; `transfer_events` keeps every change with its reason (append-only,
   like the postings). `GET /api/transfers/{id}/history` and the transfer drawer in the UI show it.
-- System accounts: cash (`…0001`) for deposits, clearing account for external banks (`…0002`). They may go negative.
+- System accounts: cash (`…0001`) for deposits, clearing account for external banks (`…0002`), settlement account at
+  the clearing house (`…0003`). They may go negative and have no IBAN.
+- Every customer account has an IBAN of this bank: `DE`, check digits, the bank code from `bank.identity` and a
+  10-digit account number from a sequence. The `Iban` value object in `domain` validates and builds it; its
+  `toString()` masks it, so it doesn't end up in logs by accident.
+
+## One service, several banks
+
+The same bank-service runs as bank A (defaults) and bank B (profile `bank-b`): own identity (`bank.identity`: name,
+BIC, bank code), own Postgres schema, own Temporal namespace, own `service.name` (`bank-a`, `bank-b`) in the
+telemetry. `BankInstancesTest` checks that the two configurations share nothing but the containers.
 
 ## Architecture rules
 

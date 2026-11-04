@@ -32,6 +32,19 @@ While it runs:
 - Temporal Web UI: http://localhost:8233
 - Grafana (traces, metrics, logs): http://localhost:3000
 
+## A second bank
+
+The same bank-service also runs as a second, separate bank (bank B, "Partner Bank", #55). It has its own identity
+(name, BIC, bank code in every IBAN), its own Postgres schema (`bank_b`) and its own Temporal namespace (`bank-b`),
+next to bank A in the same containers. Its settings are in `application-bank-b.yml`:
+
+```bash
+./gradlew :bank-service:bootRun --args='--spring.profiles.active=bank-b'
+```
+
+or as a container: `docker compose --profile bank-b up -d --build --wait`. UI: http://localhost:8081. The two banks
+don't see each other's accounts or workflows; payments between them come with the clearing house (#58).
+
 ## Data and reset
 
 Ledger and workflows are kept on Docker volumes (`postgres-data`, `temporal-data`): running transfers survive a
