@@ -1,10 +1,14 @@
 package com.example.bank.activities
 
+import com.example.bank.workflow.TransferStatus
 import io.temporal.activity.ActivityInterface
 import java.util.UUID
 
-/** Result of a booking activity. The workflow only knows this contract, not the ledger's own types. */
-data class BookingOutcome(val booked: Boolean, val reason: String? = null)
+/**
+ * The transfer's business status after a ledger activity, as the ledger's transfer decider decided it.
+ * The workflow only mirrors it (for its `status` query) and branches on it; it never sets a status itself.
+ */
+data class TransferOutcome(val status: TransferStatus, val reason: String? = null)
 
 data class InternalBooking(val transferId: UUID, val debtorAccountId: UUID, val creditorAccountId: UUID, val amountCents: Long)
 
@@ -14,16 +18,27 @@ data class Refund(val transferId: UUID, val reason: String?)
 
 data class TransferRejection(val transferId: UUID, val reason: String)
 
-/** All postings go through these activities. Every method is idempotent (at-least-once). */
+data class ApprovalRequest(val transferId: UUID, val reason: String?)
+
+/** What a person decided; the ledger turns a denial into the rejection reason. */
+data class ApprovalVerdict(val transferId: UUID, val approved: Boolean, val comment: String?)
+
+/** Every change of a transfer goes through these activities. Every method is idempotent (at-least-once). */
 @ActivityInterface(namePrefix = "Ledger")
 interface LedgerActivities {
-    fun bookInternalTransfer(booking: InternalBooking): BookingOutcome
+    fun requireApproval(request: ApprovalRequest): TransferOutcome
 
-    fun debitForExternalTransfer(debit: ExternalDebit): BookingOutcome
+    fun decideApproval(verdict: ApprovalVerdict): TransferOutcome
 
-    fun completeExternalTransfer(transferId: UUID)
+    fun expireApproval(transferId: UUID): TransferOutcome
 
-    fun refundExternalTransfer(refund: Refund): BookingOutcome
+    fun bookInternalTransfer(booking: InternalBooking): TransferOutcome
 
-    fun rejectTransfer(rejection: TransferRejection)
+    fun debitForExternalTransfer(debit: ExternalDebit): TransferOutcome
+
+    fun completeExternalTransfer(transferId: UUID): TransferOutcome
+
+    fun refundExternalTransfer(refund: Refund): TransferOutcome
+
+    fun rejectTransfer(rejection: TransferRejection): TransferOutcome
 }

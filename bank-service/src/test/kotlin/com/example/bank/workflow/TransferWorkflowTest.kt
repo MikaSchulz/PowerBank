@@ -1,6 +1,7 @@
 package com.example.bank.workflow
 
-import com.example.bank.activities.BookingOutcome
+import com.example.bank.activities.ApprovalRequest
+import com.example.bank.activities.ApprovalVerdict
 import com.example.bank.activities.ExternalBankActivities
 import com.example.bank.activities.ExternalBankAnswer
 import com.example.bank.activities.ExternalDebit
@@ -11,6 +12,7 @@ import com.example.bank.activities.Refund
 import com.example.bank.activities.RiskActivities
 import com.example.bank.activities.RiskAssessment
 import com.example.bank.activities.RiskCheck
+import com.example.bank.activities.TransferOutcome
 import com.example.bank.activities.TransferRejection
 import com.example.bank.config.TemporalConfig
 import io.temporal.client.WorkflowClient
@@ -33,6 +35,9 @@ import kotlin.test.assertTrue
 /**
  * Workflow tests without Spring and without a database: in-memory test server with time skipping,
  * activities as fakes. Days of approval deadline pass in milliseconds.
+ *
+ * They test the orchestration: which ledger step comes when, what it gets, and that the workflow takes over the
+ * status the ledger decided. The status rules themselves are tested in the transfer decider (`TransferDeciderTest`).
  */
 class TransferWorkflowTest {
 
@@ -72,7 +77,7 @@ class TransferWorkflowTest {
 
     @Test
     fun `a business rejection by the ledger ends the transfer`() {
-        ledger.bookResult = BookingOutcome(booked = false, reason = "Insufficient funds")
+        ledger.bookResult = TransferOutcome(TransferStatus.REJECTED, "Insufficient funds")
 
         val result = run(internal(50_00))
 
@@ -101,7 +106,7 @@ class TransferWorkflowTest {
 
     @Test
     fun `without sufficient funds nothing is sent to the external bank`() {
-        ledger.debitResult = BookingOutcome(booked = false, reason = "Insufficient funds")
+        ledger.debitResult = TransferOutcome(TransferStatus.REJECTED, "Insufficient funds")
 
         val result = run(external(50_00))
 
@@ -137,13 +142,14 @@ class TransferWorkflowTest {
 
         awaitStatus(workflow, TransferStatus.AWAITING_APPROVAL)
         assertEquals("Amount exceeds approval limit", workflow.status().reason)
-        assertTrue(ledger.calls.isEmpty(), "nothing is booked before approval")
+        assertEquals(listOf("requireApproval"), ledger.calls, "nothing is booked before approval")
 
-        val afterUpdate = workflow.approve(ApprovalDecision(approved = true))
-        assertTrue(afterUpdate.status != TransferStatus.AWAITING_APPROVAL)
+        val afterUpdate = workflow.approve(ApprovalDecision(approved = true, comment = "checked"))
+        assertEquals(TransferStatus.APPROVED, afterUpdate.status)
 
         assertEquals(TransferStatus.BOOKED, stub.getResult(TransferState::class.java).status)
-        assertEquals(listOf("book"), ledger.calls)
+        assertEquals(listOf("requireApproval", "approve", "book"), ledger.calls)
+        assertEquals("checked", ledger.verdict?.comment)
     }
 
     @Test
@@ -156,8 +162,9 @@ class TransferWorkflowTest {
 
         val result = stub.getResult(TransferState::class.java)
         assertEquals(TransferStatus.REJECTED, result.status)
-        assertEquals("Approval denied: customer reports fraud", result.reason)
-        assertEquals(listOf("reject"), ledger.calls)
+        assertEquals("denied by the ledger", result.reason, "the workflow takes over the ledger's reason")
+        assertEquals(listOf("requireApproval", "deny"), ledger.calls)
+        assertEquals("customer reports fraud", ledger.verdict?.comment)
     }
 
     @Test
@@ -168,8 +175,7 @@ class TransferWorkflowTest {
         val result = stub.getResult(TransferState::class.java) // time skipping: three days pass instantly
 
         assertEquals(TransferStatus.REJECTED, result.status)
-        assertEquals("No approval within the deadline", result.reason)
-        assertEquals(listOf("reject"), ledger.calls)
+        assertEquals(listOf("requireApproval", "expire"), ledger.calls)
     }
 
     @Test
@@ -214,26 +220,47 @@ class TransferWorkflowTest {
         error("Status $expected not reached, last: ${runCatching { workflow.status() }.getOrNull()}")
     }
 
+    /** Answers like the ledger would, without its rules: each step simply leads to its usual status. */
     class FakeLedger : LedgerActivities {
         val calls = CopyOnWriteArrayList<String>()
 
-        @Volatile var bookResult = BookingOutcome(booked = true)
+        @Volatile var bookResult = TransferOutcome(TransferStatus.BOOKED)
 
-        @Volatile var debitResult = BookingOutcome(booked = true)
+        @Volatile var debitResult = TransferOutcome(TransferStatus.SENT_TO_EXTERNAL_BANK)
+
+        @Volatile var verdict: ApprovalVerdict? = null
+
+        override fun requireApproval(request: ApprovalRequest) =
+            TransferOutcome(TransferStatus.AWAITING_APPROVAL, request.reason).also { calls += "requireApproval" }
+
+        override fun decideApproval(verdict: ApprovalVerdict): TransferOutcome {
+            this.verdict = verdict
+            calls += if (verdict.approved) "approve" else "deny"
+            return if (verdict.approved) {
+                TransferOutcome(
+                    TransferStatus.APPROVED,
+                )
+            } else {
+                TransferOutcome(TransferStatus.REJECTED, "denied by the ledger")
+            }
+        }
+
+        override fun expireApproval(transferId: UUID) =
+            TransferOutcome(TransferStatus.REJECTED, "expired").also { calls += "expire" }
 
         override fun bookInternalTransfer(booking: InternalBooking) = bookResult.also { calls += "book" }
 
         override fun debitForExternalTransfer(debit: ExternalDebit) = debitResult.also { calls += "debit" }
 
-        override fun completeExternalTransfer(transferId: UUID) {
-            calls += "complete"
+        override fun completeExternalTransfer(transferId: UUID) = TransferOutcome(TransferStatus.COMPLETED).also { calls += "complete" }
+
+        override fun refundExternalTransfer(refund: Refund) = TransferOutcome(TransferStatus.REFUNDED, refund.reason).also {
+            calls +=
+                "refund"
         }
 
-        override fun refundExternalTransfer(refund: Refund) = BookingOutcome(booked = true).also { calls += "refund" }
-
-        override fun rejectTransfer(rejection: TransferRejection) {
-            calls += "reject"
-        }
+        override fun rejectTransfer(rejection: TransferRejection) =
+            TransferOutcome(TransferStatus.REJECTED, rejection.reason).also { calls += "reject" }
     }
 
     class FakeRisk : RiskActivities {

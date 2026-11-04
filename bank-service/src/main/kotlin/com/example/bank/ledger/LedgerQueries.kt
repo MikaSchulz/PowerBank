@@ -2,6 +2,7 @@ package com.example.bank.ledger
 
 import com.example.bank.domain.AccountId
 import com.example.bank.domain.TransferId
+import com.example.bank.domain.transfer.TransferStatus
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.stereotype.Component
 import java.sql.ResultSet
@@ -98,16 +99,16 @@ class LedgerQueries(private val jdbc: JdbcClient) {
             .query(Long::class.java)
             .single()
 
-    /** Transfers with this status: still waiting (PENDING, e.g. for an approval) or on their way (DEBITED). */
-    fun countTransfers(status: TransferRecordStatus): Long =
+    /** Transfers in this status. */
+    fun countTransfers(status: TransferStatus): Long =
         jdbc.sql("SELECT COUNT(*) FROM transfers WHERE status = :status")
             .param("status", status.name)
             .query(Long::class.java)
             .single()
 
-    /** How long the oldest transfer with this status has been waiting, in seconds; 0 if there is none. */
-    fun oldestTransferAgeSeconds(status: TransferRecordStatus): Double =
-        jdbc.sql("SELECT COALESCE(EXTRACT(EPOCH FROM now() - MIN(created_at)), 0) FROM transfers WHERE status = :status")
+    /** How long the transfer that has been in this status the longest has been in it, in seconds; 0 if there is none. */
+    fun oldestTransferAgeSeconds(status: TransferStatus): Double =
+        jdbc.sql("SELECT COALESCE(EXTRACT(EPOCH FROM now() - MIN(updated_at)), 0) FROM transfers WHERE status = :status")
             .param("status", status.name)
             .query(Double::class.java)
             .single()

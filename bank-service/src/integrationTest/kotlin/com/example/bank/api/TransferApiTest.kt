@@ -163,13 +163,13 @@ class TransferApiTest @Autowired constructor(
         val alice = openAccount()
         val bob = openAccount()
         deposit(alice, 20_000_00)
-        val waitingBefore = inFlight("PENDING")
+        val waitingBefore = inFlight("AWAITING_APPROVAL")
 
         val transferId = postTransfer("""{"debtorAccountId":"$alice","creditorAccountId":"$bob","amountCents":1500000}""")
         awaitStatus(transferId, "AWAITING_APPROVAL")
 
-        assertEquals(waitingBefore + 1, inFlight("PENDING"))
-        assertTrue(registry.get("bank.transfers.in.flight.age.max").tag("status", "PENDING").gauge().value() >= 0.0)
+        assertEquals(waitingBefore + 1, inFlight("AWAITING_APPROVAL"))
+        assertTrue(registry.get("bank.transfers.in.flight.age.max").tag("status", "AWAITING_APPROVAL").gauge().value() >= 0.0)
         assertEquals(0.0, registry.get("bank.ledger.sum").gauge().value())
 
         mvc.post("/api/transfers/$transferId/approval") {
@@ -177,7 +177,7 @@ class TransferApiTest @Autowired constructor(
             content = """{"approved":false}"""
         }.andExpect { status { isOk() } }
         awaitResult(transferId)
-        assertEquals(waitingBefore, inFlight("PENDING"))
+        assertEquals(waitingBefore, inFlight("AWAITING_APPROVAL"))
     }
 
     @Test
@@ -246,7 +246,7 @@ class TransferApiTest @Autowired constructor(
     }
 
     @Test
-    fun `a transfer awaiting approval shows its live status in the list`() {
+    fun `a transfer awaiting approval shows its status from the ledger, and its history`() {
         val alice = openAccount()
         val bob = openAccount()
         deposit(alice, 20_000_00)
@@ -263,6 +263,10 @@ class TransferApiTest @Autowired constructor(
             content = """{"approved":false}"""
         }
         awaitResult(transferId)
+        assertEquals(
+            listOf("RECEIVED", "AWAITING_APPROVAL", "REJECTED"),
+            read<List<String>>("/api/transfers/$transferId/history", "$[*].status"),
+        )
     }
 
     @Test

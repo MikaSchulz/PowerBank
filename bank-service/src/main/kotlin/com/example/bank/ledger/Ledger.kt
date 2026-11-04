@@ -16,12 +16,25 @@ import com.example.bank.domain.account.Rejection
 import com.example.bank.domain.account.ReverseCredit
 import com.example.bank.domain.account.ReverseDebit
 import com.example.bank.domain.account.UnblockAccount
-import com.example.bank.ledger.TransferRecordStatus.BOOKED
-import com.example.bank.ledger.TransferRecordStatus.COMPLETED
-import com.example.bank.ledger.TransferRecordStatus.DEBITED
-import com.example.bank.ledger.TransferRecordStatus.PENDING
-import com.example.bank.ledger.TransferRecordStatus.REFUNDED
-import com.example.bank.ledger.TransferRecordStatus.REJECTED
+import com.example.bank.domain.transfer.Approve
+import com.example.bank.domain.transfer.BookTransfer
+import com.example.bank.domain.transfer.CompleteTransfer
+import com.example.bank.domain.transfer.DenyApproval
+import com.example.bank.domain.transfer.ExpireApproval
+import com.example.bank.domain.transfer.ReceiveTransfer
+import com.example.bank.domain.transfer.RefundTransfer
+import com.example.bank.domain.transfer.RejectTransfer
+import com.example.bank.domain.transfer.RequireApproval
+import com.example.bank.domain.transfer.SendToExternalBank
+import com.example.bank.domain.transfer.Transfer
+import com.example.bank.domain.transfer.TransferBooked
+import com.example.bank.domain.transfer.TransferCommand
+import com.example.bank.domain.transfer.TransferCommandRejected
+import com.example.bank.domain.transfer.TransferEvent
+import com.example.bank.domain.transfer.TransferKind
+import com.example.bank.domain.transfer.TransferRefunded
+import com.example.bank.domain.transfer.TransferSentToExternalBank
+import com.example.bank.domain.transfer.TransferStatus
 import com.example.bank.observability.BankSpans
 import com.fraktalio.fmodel.application.EventSourcingAggregate
 import com.fraktalio.fmodel.application.handle
@@ -35,7 +48,7 @@ import org.springframework.transaction.support.TransactionTemplate
 import java.util.UUID
 import java.util.function.Supplier
 
-/** Result of a booking. A plain data class so it can be serialized as an activity result. */
+/** Result of an account command. A plain data class so it can be serialized as an activity result. */
 data class BookingResult(val booked: Boolean, val reason: String? = null) {
     companion object {
         val BOOKED = BookingResult(booked = true)
@@ -43,15 +56,20 @@ data class BookingResult(val booked: Boolean, val reason: String? = null) {
     }
 }
 
+/** A transfer's business status after a ledger operation, as the transfer decider decided it. */
+data class TransferResult(val status: TransferStatus, val reason: String? = null)
+
 /**
  * The ledger: every method is exactly one database transaction.
  *
- * Business decisions are made by the fmodel aggregate. The ledger takes care of transactions,
- * lock ordering and idempotency (activities run at least once).
+ * Business decisions are made by the fmodel aggregates: the transfer decider decides which step a transfer may take,
+ * the account decider whether the money may move. The ledger runs both in one transaction and takes care of lock
+ * ordering (always the transfer first, then the accounts sorted by ID) and idempotency (activities run at least once).
  */
 @Component
 class Ledger(
-    private val aggregate: EventSourcingAggregate<AccountCommand, Account, AccountEvent>,
+    private val accounts: EventSourcingAggregate<AccountCommand, Account, AccountEvent>,
+    private val transferAggregate: EventSourcingAggregate<TransferCommand, Transfer, TransferEvent>,
     private val transfers: TransferRecords,
     private val jdbc: JdbcClient,
     private val tx: TransactionTemplate,
@@ -67,98 +85,115 @@ class Ledger(
 
     fun closeAccount(accountId: AccountId) = accountCommand(CloseAccount(accountId))
 
-    /** Internal transfer: debit and credit in one transaction. No saga needed. */
-    fun bookInternalTransfer(
-        transferId: TransferId,
-        debtor: AccountId,
-        creditor: AccountId,
-        amountCents: Long,
-    ): BookingResult {
-        if (debtor == creditor) return reject(transferId, "Debtor and creditor account are identical")
-        return bookPair(transferId, debtor, creditor, amountCents, onSuccess = BOOKED)
+    /** The bank accepts a transfer: status RECEIVED. A second call with the same transfer changes nothing. */
+    fun receiveTransfer(details: TransferDetails): TransferResult = inTransaction {
+        val id = TransferId(details.id)
+        handleTransfer(
+            ReceiveTransfer(
+                id,
+                details.kind,
+                AccountId(details.debtorAccountId),
+                details.creditorAccountId?.let(::AccountId),
+                details.amountCents,
+            ),
+        ).failIfRejected(id)
+        transfers.attachTraceId(id, details.traceId)
+        current(id)
+    }
+
+    fun requireApproval(transferId: TransferId, reason: String) = changeTransfer(RequireApproval(transferId, reason))
+
+    fun approve(transferId: TransferId, comment: String?) = changeTransfer(Approve(transferId, comment))
+
+    fun denyApproval(transferId: TransferId, comment: String?) = changeTransfer(DenyApproval(transferId, comment))
+
+    fun expireApproval(transferId: TransferId) = changeTransfer(ExpireApproval(transferId))
+
+    /** Rejects a transfer that has not been booked yet. */
+    fun rejectTransfer(transferId: TransferId, reason: String) = changeTransfer(RejectTransfer(transferId, reason))
+
+    /** Internal transfer or deposit: debit and credit in one transaction. No saga needed. */
+    fun bookInternalTransfer(transferId: TransferId, debtor: AccountId, creditor: AccountId, amountCents: Long): TransferResult {
+        val kind = if (debtor == SystemAccounts.CASH) TransferKind.DEPOSIT else TransferKind.INTERNAL
+        return book(
+            BookTransfer(transferId),
+            ReceiveTransfer(transferId, kind, debtor, creditor, amountCents),
+            debtor,
+            creditor,
+            amountCents,
+        )
     }
 
     /** First step of the external bank saga: the customer is debited, the money sits on the clearing account. */
-    fun debitForExternalTransfer(transferId: TransferId, debtor: AccountId, amountCents: Long): BookingResult =
-        bookPair(transferId, debtor, SystemAccounts.EXTERNAL_CLEARING, amountCents, onSuccess = DEBITED)
+    fun debitForExternalTransfer(transferId: TransferId, debtor: AccountId, amountCents: Long): TransferResult = book(
+        SendToExternalBank(transferId),
+        ReceiveTransfer(transferId, TransferKind.EXTERNAL, debtor, null, amountCents),
+        debtor,
+        SystemAccounts.EXTERNAL_CLEARING,
+        amountCents,
+    )
 
     /** The external bank accepted: saga completed successfully. Idempotent. */
-    fun completeExternalTransfer(transferId: TransferId) {
-        tx.executeWithoutResult {
-            val record = transfers.find(transferId) ?: error("Transfer $transferId does not exist")
-            when (record.status) {
-                COMPLETED -> Unit
-                DEBITED -> transfers.transition(transferId, setOf(DEBITED), COMPLETED)
-                else -> throw IllegalTransferState(transferId, record.status, "completed")
-            }
-        }
-    }
+    fun completeExternalTransfer(transferId: TransferId) = changeTransfer(CompleteTransfer(transferId))
 
     /**
      * Compensation of the external bank saga: refund the debit. Amount and account come from the ledger,
      * not from the workflow, because the ledger is the source of truth. Idempotent.
      */
-    fun refundExternalTransfer(transferId: TransferId, reason: String?): BookingResult = inTransaction {
-        val record = transfers.find(transferId) ?: error("Transfer $transferId does not exist")
-        when (record.status) {
-            REFUNDED -> return@inTransaction BookingResult.BOOKED
-            DEBITED -> Unit
-            else -> throw IllegalTransferState(transferId, record.status, "refunded")
+    fun refundExternalTransfer(transferId: TransferId, reason: String): TransferResult = inTransaction {
+        val events = handleTransfer(RefundTransfer(transferId, reason)).failIfRejected(transferId)
+        if (events.any { it is TransferRefunded }) {
+            val (debtor, amountCents) = debitOf(transferId)
+            lockInOrder(debtor, SystemAccounts.EXTERNAL_CLEARING)
+            handle(ReverseDebit(debtor, transferId, amountCents)).failIfRejected()
+            handle(ReverseCredit(SystemAccounts.EXTERNAL_CLEARING, transferId, amountCents)).failIfRejected()
         }
-        val (debtor, amountCents) = debitOf(transferId)
-        lockInOrder(debtor, SystemAccounts.EXTERNAL_CLEARING)
-        handle(ReverseDebit(debtor, transferId, amountCents)).failIfRejected()
-        handle(ReverseCredit(SystemAccounts.EXTERNAL_CLEARING, transferId, amountCents)).failIfRejected()
-        transfers.transition(transferId, setOf(DEBITED), REFUNDED, reason)
-        BookingResult.BOOKED
+        current(transferId)
     }
 
-    /** Marks a transfer that has not been booked yet as rejected, e.g. after a denied approval. */
-    fun rejectTransfer(transferId: TransferId, reason: String) {
-        reject(transferId, reason)
-    }
-
-    private fun bookPair(
-        transferId: TransferId,
+    /**
+     * A booking step and its money in one transaction: first the transfer decider decides whether the step is allowed
+     * (or already happened), then the account decider books debit and credit. If an account rejects, e.g. for
+     * insufficient funds, everything is rolled back and the transfer is rejected instead.
+     */
+    private fun book(
+        step: TransferCommand,
+        receive: ReceiveTransfer,
         debtor: AccountId,
         creditor: AccountId,
         amountCents: Long,
-        onSuccess: TransferRecordStatus,
-    ): BookingResult = try {
+    ): TransferResult = try {
         inTransaction {
-            transfers.createIfAbsent(transferId)
-            // Idempotency: if a decision was already made, the earlier decision stands.
-            earlierOutcome(transferId)?.let { return@inTransaction it }
+            val id = step.transferId
+            handleTransfer(receive).failIfRejected(id) // normally received by the API already; then this changes nothing
+            // An earlier attempt was rejected (e.g. insufficient funds): that decision stands, also on a retry.
+            current(id).takeIf { it.status == TransferStatus.REJECTED }?.let { return@inTransaction it }
 
-            lockInOrder(debtor, creditor)
-            handle(Debit(debtor, transferId, amountCents)).rejection()?.let {
-                transfers.transition(transferId, setOf(PENDING), REJECTED, it.reason)
-                return@inTransaction BookingResult.rejected(it.reason)
+            val events = handleTransfer(step).failIfRejected(id)
+            if (events.any { it is TransferBooked || it is TransferSentToExternalBank }) {
+                lockInOrder(debtor, creditor)
+                handle(Debit(debtor, id, amountCents)).rejection()?.let { throw BookingRejected(it.reason) }
+                handle(Credit(creditor, id, amountCents)).rejection()?.let { throw BookingRejected(it.reason) }
             }
-            handle(Credit(creditor, transferId, amountCents)).rejection()?.let {
-                throw BookingRejected(it.reason) // rollback: the debit is discarded too
-            }
-            transfers.transition(transferId, setOf(PENDING), onSuccess)
-            BookingResult.BOOKED
+            current(id) // booked now, booked before (retry), or rejected by the transfer decider
         }
     } catch (e: BookingRejected) {
-        reject(transferId, e.reason)
-    }
-
-    private fun reject(transferId: TransferId, reason: String): BookingResult = inTransaction {
-        transfers.createIfAbsent(transferId)
-        earlierOutcome(transferId)?.let { return@inTransaction it }
-        transfers.transition(transferId, setOf(PENDING), REJECTED, reason)
-        BookingResult.rejected(reason)
-    }
-
-    private fun earlierOutcome(transferId: TransferId): BookingResult? {
-        val record = transfers.find(transferId) ?: return null
-        return when (record.status) {
-            PENDING -> null
-            REJECTED -> BookingResult.rejected(record.reason ?: "rejected")
-            else -> BookingResult.BOOKED
+        // The rollback discarded the step and the debit, and the receipt too if it happened in that transaction.
+        inTransaction {
+            handleTransfer(receive).failIfRejected(step.transferId)
+            handleTransfer(RejectTransfer(step.transferId, e.reason)).failIfRejected(step.transferId)
+            current(step.transferId)
         }
+    }
+
+    private fun changeTransfer(command: TransferCommand): TransferResult = inTransaction {
+        handleTransfer(command).failIfRejected(command.transferId)
+        current(command.transferId)
+    }
+
+    private fun current(id: TransferId): TransferResult {
+        val record = transfers.find(id) ?: error("Transfer $id does not exist")
+        return TransferResult(record.status, record.reason)
     }
 
     private fun accountCommand(command: AccountCommand): BookingResult = inTransaction {
@@ -199,7 +234,16 @@ class Ledger(
                 .lowCardinalityKeyValue("command", command::class.simpleName ?: "unknown")
                 .highCardinalityKeyValue(BankSpans.ACCOUNT_ID, command.accountId.toString())
                 .highCardinalityKeyValue(BankSpans.TRANSFER_ID, transferIdOf(command))
-                .observe(Supplier { runBlocking { aggregate.handle(command).toList() } }),
+                .observe(Supplier { runBlocking { accounts.handle(command).toList() } }),
+        )
+
+    /** Same as [handle] for the transfer's lifecycle: span and timer "bank.transfer.command". */
+    private fun handleTransfer(command: TransferCommand): List<TransferEvent> =
+        checkNotNull(
+            Observation.createNotStarted("bank.transfer.command", observations)
+                .lowCardinalityKeyValue("command", command::class.simpleName ?: "unknown")
+                .highCardinalityKeyValue(BankSpans.TRANSFER_ID, command.transferId.toString())
+                .observe(Supplier { runBlocking { transferAggregate.handle(command).toList() } }),
         )
 
     private fun transferIdOf(command: AccountCommand): String = when (command) {
@@ -218,8 +262,13 @@ class Ledger(
         rejection()?.let { error("Compensation rejected: ${it.reason}") }
     }
 
+    /** A step the transfer's status doesn't allow is a bug in the caller, not a business outcome. */
+    private fun List<TransferEvent>.failIfRejected(id: TransferId): List<TransferEvent> {
+        filterIsInstance<TransferCommandRejected>().firstOrNull()?.let { throw IllegalTransferState(id, it.reason) }
+        return this
+    }
+
     private class BookingRejected(val reason: String) : RuntimeException(reason, null, false, false)
 }
 
-class IllegalTransferState(transferId: TransferId, status: TransferRecordStatus, action: String) :
-    IllegalStateException("Transfer $transferId in status $status cannot be $action")
+class IllegalTransferState(transferId: TransferId, reason: String) : IllegalStateException("Transfer $transferId: $reason")

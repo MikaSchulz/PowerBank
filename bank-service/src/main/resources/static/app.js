@@ -12,11 +12,11 @@ const TERMINAL = new Set(['BOOKED', 'COMPLETED', 'REFUNDED', 'REJECTED']);
 
 const STATUS = {
   RECEIVED: { label: 'Received', tone: 'info', live: true,
-    explain: 'The workflow has started. The <strong>risk check activity</strong> decides whether a human needs to approve.' },
+    explain: 'Received in the ledger, and the workflow has started. The <strong>risk check activity</strong> decides whether a person needs to approve.' },
   AWAITING_APPROVAL: { label: 'Awaiting approval', tone: 'warn', live: true,
-    explain: 'Paused in <code>Workflow.await()</code> for up to 3 days. The <strong>approve update</strong> (with validator) lets it continue or abort. Nothing has been booked yet.' },
+    explain: 'The workflow waits in <code>Workflow.await()</code> for up to 3 days. Nothing runs meanwhile: Temporal keeps the open workflow and a timer, and the <strong>ledger</strong> shows the transfer as awaiting approval. The <strong>approve update</strong> (checked by a validator) lets it continue or abort. Nothing has been booked yet.' },
   APPROVED: { label: 'Approved', tone: 'info', live: true,
-    explain: 'The approve update was accepted. The workflow continues with the booking.' },
+    explain: 'The approval is recorded in the ledger. The workflow continues with the booking.' },
   SENT_TO_EXTERNAL_BANK: { label: 'At external bank', tone: 'info', live: true,
     explain: 'The customer was debited and the money sits on the <strong>clearing account</strong>. The external bank activity runs; technical errors are retried with backoff for up to 10 minutes.' },
   BOOKED: { label: 'Booked', tone: 'ok',
@@ -239,11 +239,16 @@ async function refreshDrawer() {
   if (!drawer) return;
   if (drawer.type === 'transfer') {
     const quiet = { sampled: false };
-    const [live, postings] = await Promise.all([
+    const [live, postings, history] = await Promise.all([
       api('GET', `/api/transfers/${drawer.id}`, undefined, quiet),
       api('GET', `/api/transfers/${drawer.id}/postings`, undefined, quiet),
+      api('GET', `/api/transfers/${drawer.id}/history`, undefined, quiet),
     ]);
-    state.drawerData = { live: live.ok ? live.data : null, postings: postings.ok ? postings.data : [] };
+    state.drawerData = {
+      live: live.ok ? live.data : null,
+      postings: postings.ok ? postings.data : [],
+      history: history.ok ? history.data : [],
+    };
   } else {
     const postings = await api('GET', `/api/accounts/${drawer.id}/postings`, undefined, { sampled: false });
     state.drawerData = { postings: postings.ok ? postings.data : [] };
@@ -481,13 +486,17 @@ function transferDetails(id) {
     <div class="d-title">${esc(money(t.amountCents))}</div>
     <div class="d-route"><strong>${esc(route(t))}</strong></div>
     ${t.status ? transferChip(t.status) : ''}
-    ${t.status ? stepper(t) : ''}
+    ${t.status ? stepper(t, state.drawerData?.history || []) : ''}
     ${info.explain ? `<div class="explain">${info.explain}${t.reason ? `<br><br>Reason: <strong>${esc(t.reason)}</strong>` : ''}</div>` : ''}
     ${t.status === 'AWAITING_APPROVAL' ? `
       <div class="d-actions">
         <button class="btn ok" data-action="approve" data-id="${id}">Approve</button>
         <button class="btn ghost" data-action="deny" data-id="${id}">Deny</button>
       </div>` : ''}
+    <div class="d-section">
+      <h3>History in the ledger</h3>
+      ${historyTable(state.drawerData?.history || [])}
+    </div>
     <div class="d-section">
       <h3>Postings in the ledger</h3>
       ${postingsTable(postings, true)}
@@ -510,10 +519,9 @@ function transferDetails(id) {
     </div>`;
 }
 
-function stepper(t) {
+function stepper(t, history) {
   const external = t.kind === 'EXTERNAL';
-  const approvalReason = /approval|deadline/i.test(t.reason || '');
-  const withApproval = t.status === 'AWAITING_APPROVAL' || t.status === 'APPROVED' || (t.status === 'REJECTED' && approvalReason);
+  const withApproval = t.status === 'AWAITING_APPROVAL' || history.some((h) => h.status === 'AWAITING_APPROVAL');
   const steps = [{ key: 'received', label: 'Received' }];
   if (withApproval) steps.push({ key: 'approval', label: 'Approval' });
   if (external) steps.push({ key: 'bank', label: 'External bank' });
@@ -536,7 +544,7 @@ function stepper(t) {
     case 'BOOKED': case 'COMPLETED': steps.forEach((s) => { s.state = 'done'; }); break;
     case 'REFUNDED': doneBefore('final'); set('final', 'fail', 'Refunded'); break;
     case 'REJECTED':
-      if (withApproval) { doneBefore('approval'); set('approval', 'fail', 'Not approved'); }
+      if (withApproval && !history.some((h) => h.status === 'APPROVED')) { doneBefore('approval'); set('approval', 'fail', 'Not approved'); }
       else { const at = external ? 'bank' : 'final'; doneBefore(at); set(at, 'fail', 'Rejected'); }
       break;
     default: break;
@@ -547,6 +555,21 @@ function stepper(t) {
       <span class="bullet">${s.state === 'done' ? CHECK : s.state === 'fail' ? CROSS : i + 1}</span>
       <span>${esc(s.label)}</span>
     </div>`).join('')}</div>`;
+}
+
+/** The transfer's business history from the ledger: every status it went through, with time and reason. */
+function historyTable(history) {
+  if (!history.length) return '<p class="hint">Loading…</p>';
+  return `
+    <table class="ledger-table">
+      <thead><tr><th>Time</th><th>Status</th><th>Reason or comment</th></tr></thead>
+      <tbody>${history.map((h) => `
+        <tr>
+          <td>${esc(new Date(h.at).toLocaleTimeString())}</td>
+          <td>${esc(STATUS[h.status]?.label || h.status)}</td>
+          <td>${h.reason ? esc(h.reason) : '<span class="muted">–</span>'}</td>
+        </tr>`).join('')}</tbody>
+    </table>`;
 }
 
 function postingsTable(postings, withSum) {

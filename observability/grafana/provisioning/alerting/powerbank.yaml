@@ -127,7 +127,7 @@ groups:
             datasourceUid: prometheus
             model:
               refId: A
-              expr: max(bank_transfers_in_flight_age_max_seconds{status="PENDING"})
+              expr: max(bank_transfers_in_flight_age_max_seconds{status="AWAITING_APPROVAL"})
               instant: true
               range: false
           - refId: C
@@ -144,10 +144,10 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: A transfer has been waiting for more than a day.
+          summary: A transfer has been waiting for an approval for more than a day.
           description: >-
-            The oldest pending transfer is {{ humanizeDuration $values.A.Value }} old. Transfers above the limit wait
-            for an approval for up to 3 days and are rejected afterwards; approve or deny it in the UI.
+            One transfer has been awaiting approval for {{ humanizeDuration $values.A.Value }}. Transfers above the
+            limit wait for up to 3 days and are rejected afterwards; approve or deny it in the UI.
           __dashboardUid__: powerbank-overview
           __panelId__: "4"
 
@@ -160,7 +160,7 @@ groups:
             datasourceUid: prometheus
             model:
               refId: A
-              expr: max(bank_transfers_in_flight_age_max_seconds{status="DEBITED"})
+              expr: max(bank_transfers_in_flight_age_max_seconds{status="SENT_TO_EXTERNAL_BANK"})
               instant: true
               range: false
           - refId: C
@@ -177,10 +177,44 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: An external transfer has been debited for more than 15 minutes without being finished.
+          summary: An external transfer has been at the external bank for more than 15 minutes.
           description: >-
             The workflow refunds the debit after 10 minutes without an answer from the external bank, so after
             {{ humanizeDuration $values.A.Value }} something is wrong: is the worker running?
+          __dashboardUid__: powerbank-overview
+          __panelId__: "4"
+
+      - uid: powerbank-transfer-stuck-before-booking
+        title: Transfer stuck before booking
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              # Received or approved transfers are booked within seconds; nothing is booked for them yet.
+              expr: max(bank_transfers_in_flight_age_max_seconds{status=~"RECEIVED|APPROVED"})
+              instant: true
+              range: false
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [900] }
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        labels:
+          severity: warning
+        annotations:
+          summary: A transfer has been received or approved for more than 15 minutes without being booked.
+          description: >-
+            One transfer has been waiting {{ humanizeDuration $values.A.Value }} for its next step. Is the worker
+            running, and does its workflow still exist in Temporal (#40)?
           __dashboardUid__: powerbank-overview
           __panelId__: "4"
 
