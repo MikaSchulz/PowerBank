@@ -20,6 +20,7 @@ import io.temporal.client.WorkflowClientOptions
 import io.temporal.client.WorkflowOptions
 import io.temporal.client.WorkflowStub
 import io.temporal.client.WorkflowUpdateException
+import io.temporal.client.WorkflowUpdateStage
 import io.temporal.testing.TestEnvironmentOptions
 import io.temporal.testing.TestWorkflowEnvironment
 import org.junit.jupiter.api.AfterEach
@@ -29,6 +30,8 @@ import org.junit.jupiter.api.assertThrows
 import java.time.Duration
 import java.util.UUID
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
@@ -153,6 +156,23 @@ class TransferWorkflowTest {
     }
 
     @Test
+    fun `an approval right after the ledger shows the transfer as waiting is accepted`() {
+        risk.reviewRequired = true
+        val gate = CountDownLatch(1)
+        ledger.requireApprovalGate = gate
+        val (_, stub) = start(internal(20_000_00))
+        assertTrue(ledger.requireApprovalEntered.await(10, TimeUnit.SECONDS)) // the ledger records AWAITING_APPROVAL now
+
+        // The UI reads AWAITING_APPROVAL from the ledger and approves before the workflow has the activity's result.
+        val update = stub.startUpdate("approve", WorkflowUpdateStage.ACCEPTED, TransferState::class.java, ApprovalDecision(approved = true))
+        gate.countDown()
+
+        assertEquals(TransferStatus.APPROVED, update.result.status)
+        assertEquals(TransferStatus.BOOKED, stub.getResult(TransferState::class.java).status)
+        assertEquals(listOf("requireApproval", "approve", "book"), ledger.calls)
+    }
+
+    @Test
     fun `denied approval aborts the transfer`() {
         risk.reviewRequired = true
         val (workflow, stub) = start(internal(20_000_00))
@@ -230,8 +250,17 @@ class TransferWorkflowTest {
 
         @Volatile var verdict: ApprovalVerdict? = null
 
-        override fun requireApproval(request: ApprovalRequest) =
-            TransferOutcome(TransferStatus.AWAITING_APPROVAL, request.reason).also { calls += "requireApproval" }
+        /** If set, `requireApproval` waits for it: the ledger has recorded the status, the workflow doesn't know yet. */
+        @Volatile var requireApprovalGate: CountDownLatch? = null
+
+        val requireApprovalEntered = CountDownLatch(1)
+
+        override fun requireApproval(request: ApprovalRequest): TransferOutcome {
+            requireApprovalEntered.countDown()
+            requireApprovalGate?.await(10, TimeUnit.SECONDS)
+            calls += "requireApproval"
+            return TransferOutcome(TransferStatus.AWAITING_APPROVAL, request.reason)
+        }
 
         override fun decideApproval(verdict: ApprovalVerdict): TransferOutcome {
             this.verdict = verdict

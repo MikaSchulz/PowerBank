@@ -50,7 +50,7 @@ Tests come in two kinds:
 
 | Task | Needs | What |
 | --- | --- | --- |
-| `./gradlew test` | nothing, no containers | domain (decider, risk rules), `TransferWorkflowTest` with Temporal's in-memory test environment, ArchUnit, web slices, Grafana files |
+| `./gradlew test` | nothing, no containers | domain (deciders, risk rules), `TransferWorkflowTest` with Temporal's in-memory test environment, replay of recorded workflow histories, ArchUnit, web slices, Grafana files |
 | `./gradlew integrationTest` | the running stack (`docker compose up -d --wait`) | ledger, REST API end to end and trace propagation, against real Postgres and the Temporal dev server |
 
 ```bash
