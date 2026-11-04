@@ -157,7 +157,7 @@
       "type": "stat",
       "id": 3,
       "title": "Transfers in flight",
-      "description": "Not finished yet: PENDING (being booked or waiting for an approval), DEBITED (on its way to an external bank).",
+      "description": "Not finished yet, by business status from the ledger: RECEIVED and APPROVED (about to be booked), AWAITING_APPROVAL (a person has to decide), SENT_TO_EXTERNAL_BANK (debited, the external bank decides).",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -220,7 +220,7 @@
       "type": "stat",
       "id": 4,
       "title": "Oldest waiting transfer",
-      "description": "Age of the oldest unfinished transfer per status. An approval may take up to 3 days; DEBITED is refunded after 10 minutes without an answer from the external bank.",
+      "description": "Per status, how long the longest-waiting transfer has been in it. An approval may take up to 3 days; SENT_TO_EXTERNAL_BANK is refunded after 10 minutes without an answer from the external bank.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"

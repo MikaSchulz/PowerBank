@@ -7,8 +7,9 @@ Open **http://localhost:8080** once the app is running. The UI is a plain HTML/J
 
 - **Accounts:** open accounts, deposit, block and unblock, see every posting with the running balance.
   Nicknames like "Alice" only live in your browser (localStorage): the bank itself only knows pseudonymous IDs.
-- **Transfers:** internal, to an external bank, or as a cash deposit. Each one opens a drawer with the live workflow
-  status, an explanation of what Temporal is doing right now, the postings it created and a link to the Temporal UI.
+- **Transfers:** internal, to an external bank, or as a cash deposit. Each one opens a drawer with its business
+  status, an explanation of what Temporal is doing right now, its history and postings in the ledger and a link to the
+  Temporal UI.
 - **Approvals:** transfers above the limit show up in a banner; approve or deny them via the `approve` update.
 - **Scenarios:** one click each: above the approval limit, insufficient funds, external bank rejects (saga refund),
   duplicate submission (409), and a burst of 10 concurrent transfers that shows the row locks at work.
@@ -57,7 +58,8 @@ More endpoints:
 | --- | --- | --- |
 | `GET` | `/api/accounts` | all accounts with balances (customer and system) |
 | `POST` | `/api/accounts/{id}/block`, `/unblock` | block or unblock an account |
-| `GET` | `/api/transfers?accountId=&limit=` | transfers, newest first, with live status for those in flight |
+| `GET` | `/api/transfers?accountId=&limit=` | transfers, newest first, with their business status from the ledger |
 | `GET` | `/api/transfers/{id}/postings` | the postings a transfer created |
+| `GET` | `/api/transfers/{id}/history` | its business history: every status with time and reason |
 | `GET` | `/api/ledger/summary` | sum of all postings (must be 0), counts |
 | `GET`, `PUT` | `/api/simulator/external-bank` | external bank simulator settings |

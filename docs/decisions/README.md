@@ -11,6 +11,7 @@ changing something they cover.
 | [0004](0004-no-personal-data-in-telemetry.md) | No personal data in telemetry | accepted |
 | [0005](0005-observability-with-opentelemetry-and-grafana-lgtm.md) | Observability with OpenTelemetry and Grafana LGTM | accepted |
 | [0006](0006-local-stack-by-hand-and-two-test-suites.md) | Local stack by hand, two test suites | accepted |
+| [0007](0007-what-waits-in-a-workflow-and-what-is-domain-state.md) | What waits in a workflow and what is domain state | accepted |
 
 **Writing one:** copy the structure (Status, Context, Decision, Consequences), take the next number, keep it to a
 page. An accepted record isn't rewritten; a new decision that replaces it gets a new record, and the old one's status

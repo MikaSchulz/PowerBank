@@ -1,5 +1,7 @@
 package com.example.bank.workflow
 
+import com.example.bank.activities.ApprovalRequest
+import com.example.bank.activities.ApprovalVerdict
 import com.example.bank.activities.ExternalBankActivities
 import com.example.bank.activities.ExternalBankAnswer
 import com.example.bank.activities.ExternalDebit
@@ -9,6 +11,7 @@ import com.example.bank.activities.LedgerActivities
 import com.example.bank.activities.Refund
 import com.example.bank.activities.RiskActivities
 import com.example.bank.activities.RiskCheck
+import com.example.bank.activities.TransferOutcome
 import com.example.bank.activities.TransferRejection
 import io.temporal.activity.ActivityOptions
 import io.temporal.common.RetryOptions
@@ -18,8 +21,9 @@ import io.temporal.workflow.Workflow
 import java.time.Duration
 
 /**
- * Orchestrates a transfer. Only Temporal building blocks: no coroutines, no I/O, no clock.
- * Business decisions are made by the activities (fmodel aggregate in the ledger).
+ * Orchestrates a transfer: the order of the steps, waiting for an approval, retries and the saga's compensation.
+ * Only Temporal building blocks: no coroutines, no I/O, no clock. Business decisions, including every status
+ * change, are made by the activities (fmodel aggregates in the ledger).
  *
  * Not a Spring bean: Temporal creates one instance per execution via the no-arg constructor.
  */
@@ -58,11 +62,12 @@ class TransferWorkflowImpl : TransferWorkflow {
     private var state: TransferState? = null
     private var decision: ApprovalDecision? = null
 
-    /** Replay-aware: does not log again while Temporal replays the history. Only IDs and amounts, never the IBAN. */
+    /** Replay-aware: does not log again while Temporal replays the history. Only IDs and statuses, never the IBAN. */
     private val log = Workflow.getLogger(TransferWorkflowImpl::class.java)
 
     override fun transfer(request: TransferRequest): TransferState {
         val external = request.creditorIban != null
+        // The API received the transfer in the ledger before starting this workflow.
         state = TransferState(request.transferId, TransferStatus.RECEIVED, request.amountCents, external)
         log.info("Transfer {} received, external={}", request.transferId, external) // no amount: logs are for operations
 
@@ -72,24 +77,36 @@ class TransferWorkflowImpl : TransferWorkflow {
         return result
     }
 
+    /**
+     * The order of the steps, the waiting and the retries. Which step is allowed and what the transfer's status becomes
+     * is decided by the ledger (transfer decider); the workflow only mirrors the outcome (decision 0007).
+     */
     private fun process(request: TransferRequest, external: Boolean): TransferState {
         val assessment = risk.assess(RiskCheck(request.transferId, request.debtorAccountId, request.amountCents, external))
         if (assessment.reviewRequired) {
-            update(TransferStatus.AWAITING_APPROVAL, assessment.reason)
-            log.info("Transfer {} awaits approval: {}", request.transferId, assessment.reason)
-            val waitingSince = Workflow.currentTimeMillis()
-            val decided = Workflow.await(APPROVAL_TIMEOUT) { decision != null }
-            metrics().timer("bank_transfer_approval_wait")
-                .record(com.uber.m3.util.Duration.ofMillis((Workflow.currentTimeMillis() - waitingSince).toDouble()))
-            val d = decision
-            when {
-                !decided || d == null -> return reject(request, "No approval within the deadline")
-                !d.approved -> return reject(request, "Approval denied" + (d.comment?.let { ": $it" } ?: ""))
-                else -> update(TransferStatus.APPROVED)
-            }
+            mirror(ledger.requireApproval(ApprovalRequest(request.transferId, assessment.reason)))
+            log.info("Transfer {} awaits approval", request.transferId)
+            if (awaitApproval(request).rejected) return checkNotNull(state)
         }
-
         return if (external) externalTransfer(request) else internalTransfer(request)
+    }
+
+    /**
+     * Waits for the approve update, at most [APPROVAL_TIMEOUT]. Nothing runs meanwhile: Temporal keeps the open
+     * workflow and a timer, and the ledger shows the transfer as awaiting approval.
+     */
+    private fun awaitApproval(request: TransferRequest): TransferOutcome {
+        val waitingSince = Workflow.currentTimeMillis()
+        val decided = Workflow.await(APPROVAL_TIMEOUT) { decision != null }
+        metrics().timer("bank_transfer_approval_wait")
+            .record(com.uber.m3.util.Duration.ofMillis((Workflow.currentTimeMillis() - waitingSince).toDouble()))
+        val d = decision
+        val outcome = if (decided && d != null) {
+            ledger.decideApproval(ApprovalVerdict(request.transferId, d.approved, d.comment))
+        } else {
+            ledger.expireApproval(request.transferId)
+        }
+        return outcome.also(::mirror)
     }
 
     /**
@@ -108,10 +125,9 @@ class TransferWorkflowImpl : TransferWorkflow {
     /** No saga where a transaction suffices: debit and credit in one activity. */
     private fun internalTransfer(request: TransferRequest): TransferState {
         val creditor = request.creditorAccountId ?: return reject(request, "Creditor account missing")
-        val result = ledger.bookInternalTransfer(
-            InternalBooking(request.transferId, request.debtorAccountId, creditor, request.amountCents),
+        return mirror(
+            ledger.bookInternalTransfer(InternalBooking(request.transferId, request.debtorAccountId, creditor, request.amountCents)),
         )
-        return if (result.booked) update(TransferStatus.BOOKED) else update(TransferStatus.REJECTED, result.reason)
     }
 
     /**
@@ -121,34 +137,34 @@ class TransferWorkflowImpl : TransferWorkflow {
     private fun externalTransfer(request: TransferRequest): TransferState {
         val iban = request.creditorIban ?: return reject(request, "Creditor IBAN missing")
         val debit = ledger.debitForExternalTransfer(ExternalDebit(request.transferId, request.debtorAccountId, request.amountCents))
-        if (!debit.booked) return update(TransferStatus.REJECTED, debit.reason)
+        mirror(debit)
+        if (debit.rejected) return checkNotNull(state)
 
-        update(TransferStatus.SENT_TO_EXTERNAL_BANK)
         val answer = try {
             externalBank.submitPayment(ExternalPayment(request.transferId, iban, request.amountCents))
         } catch (e: ActivityFailure) {
             // All retries exhausted. Careful, in real life this is ambiguous: did the external bank book it after all?
-            // The simulator is idempotent per transfer ID; a real integration would need a status inquiry.
+            // The simulator is idempotent per transfer ID; a real integration needs a status inquiry (#59).
             log.warn("Transfer {}: external bank unreachable after all retries, refunding", request.transferId, e)
             ExternalBankAnswer(accepted = false, reason = "External bank unreachable")
         }
 
-        if (answer.accepted) {
-            ledger.completeExternalTransfer(request.transferId)
-            return update(TransferStatus.COMPLETED)
+        return if (answer.accepted) {
+            mirror(ledger.completeExternalTransfer(request.transferId))
+        } else {
+            mirror(ledger.refundExternalTransfer(Refund(request.transferId, answer.reason))) // compensation
         }
-        // compensation
-        ledger.refundExternalTransfer(Refund(request.transferId, answer.reason))
-        return update(TransferStatus.REFUNDED, answer.reason)
     }
 
-    private fun reject(request: TransferRequest, reason: String): TransferState {
-        ledger.rejectTransfer(TransferRejection(request.transferId, reason))
-        return update(TransferStatus.REJECTED, reason)
-    }
+    private fun reject(request: TransferRequest, reason: String): TransferState =
+        mirror(ledger.rejectTransfer(TransferRejection(request.transferId, reason)))
 
-    private fun update(status: TransferStatus, reason: String? = null): TransferState =
-        checkNotNull(state).copy(status = status, reason = reason).also { state = it }
+    // An extension, not a property of the DTO: Jackson would serialize a property into the history.
+    private val TransferOutcome.rejected get() = status == TransferStatus.REJECTED
+
+    /** Takes over the status the ledger decided, for the `status` query and the update validator. */
+    private fun mirror(outcome: TransferOutcome): TransferState =
+        checkNotNull(state).copy(status = outcome.status, reason = outcome.reason).also { state = it }
 
     override fun status(): TransferState = checkNotNull(state) { "Transfer not started yet" }
 

@@ -3,6 +3,7 @@ package com.example.bank.api
 import com.example.bank.domain.TransferId
 import com.example.bank.ledger.LedgerQueries
 import com.example.bank.ledger.PostingView
+import com.example.bank.ledger.TransferHistoryEntry
 import com.example.bank.workflow.ApprovalDecision
 import com.example.bank.workflow.TransferRequest
 import com.example.bank.workflow.TransferState
@@ -61,6 +62,10 @@ class TransferController(
 
     @GetMapping("/{transferId}/postings")
     fun postings(@PathVariable transferId: UUID): List<PostingView> = queries.postingsOfTransfer(TransferId(transferId))
+
+    /** The business history from the ledger: received, waiting for approval, approved, booked, … with times and reasons. */
+    @GetMapping("/{transferId}/history")
+    fun history(@PathVariable transferId: UUID): List<TransferHistoryEntry> = transfers.history(transferId)
 
     @GetMapping("/{transferId}")
     fun status(@PathVariable transferId: UUID): ResponseEntity<TransferState> =

@@ -97,9 +97,9 @@ itself (other port, CORS), and in the cloud the proxy is where a login will be r
 | --- | --- |
 | `bank_transfers_finished_total{status, kind}` | workflow, via `Workflow.getMetricsScope()` (replay-safe, no double counting) |
 | `bank_transfer_approval_wait_*` | workflow: time between "awaiting approval" and the decision |
-| `bank_ledger_lock_milliseconds_*`, `bank_account_command_milliseconds_*` | ledger observations |
+| `bank_ledger_lock_milliseconds_*`, `bank_account_command_milliseconds_*`, `bank_transfer_command_milliseconds_*` | ledger observations |
 | `bank_ledger_sum_cents` | ledger gauge: the sum of all postings, always 0 (`LedgerMetrics`) |
-| `bank_transfers_in_flight{status}`, `bank_transfers_in_flight_age_max_seconds{status}` | ledger gauges: unfinished transfers (PENDING, DEBITED) and the age of the oldest |
+| `bank_transfers_in_flight{status}`, `bank_transfers_in_flight_age_max_seconds{status}` | ledger gauges: unfinished transfers per business status and how long the longest-waiting one has been in it |
 | `temporal_*` (about 50 metrics) | Temporal SDK: workflow/activity latencies, schedule-to-start, failures, pollers, … |
 | `http_server_*`, `hikaricp_*`, `jvm_*` | Spring Boot |
 
@@ -139,8 +139,9 @@ The dashboards and alert rules are provisioned from `observability/grafana` on e
 | Ledger unbalanced | `bank_ledger_sum_cents` is not 0 | critical |
 | External bank does not accept payments | more than 50 % of the calls rejected or failed in 5 minutes (at least 5 calls), for 1 minute | warning |
 | Many external transfers refunded | more than 30 % of the finished external transfers refunded in 15 minutes (at least 5) | warning |
-| Transfer waiting for approval for over a day | oldest PENDING transfer older than 24 hours | warning |
-| External transfer stuck | oldest DEBITED transfer older than 15 minutes (the workflow refunds after 10) | warning |
+| Transfer waiting for approval for over a day | a transfer has been `AWAITING_APPROVAL` for more than 24 hours | warning |
+| External transfer stuck | a transfer has been `SENT_TO_EXTERNAL_BANK` for more than 15 minutes (the workflow refunds after 10) | warning |
+| Transfer stuck before booking | a transfer has been `RECEIVED` or `APPROVED` for more than 15 minutes | warning |
 | Temporal workers can't keep up | schedule-to-start p95 of workflow tasks or activities above 1 second for 2 minutes | warning |
 | REST API returns server errors | any 5xx response in 5 minutes | warning |
 | JavaScript errors in the UI | any error log from `bank-ui` in 5 minutes | warning |
