@@ -47,7 +47,7 @@ subprojects {
         extensions.configure<KotlinJvmProjectExtension> {
             jvmToolchain(javaVersion)
             compilerOptions {
-                freeCompilerArgs.addAll("-Xjsr305=strict", "-Xannotation-default-target=param-property")
+                freeCompilerArgs.addAll("-Xjsr305=strict")
             }
         }
     }
