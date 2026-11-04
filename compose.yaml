@@ -93,6 +93,50 @@ services:
       # log files of Postgres and the Temporal server, read-only
       - postgres-logs:/var/log/powerbank/postgres:ro
       - temporal-data:/var/log/powerbank/temporal:ro
+
+  # --- Showcase: the whole system without a local Java, with demo traffic (docs/showcase.md) -------------------------
+  #   docker compose --profile showcase up -d --build --wait     (or ./gradlew showcaseUp)
+  #   docker compose --profile showcase down                     (or ./gradlew composeDown)
+  # Don't run it next to ./gradlew :bank-service:bootRun: both use port 8080.
+  bank-service:
+    profiles: [showcase]
+    build:
+      context: .
+      dockerfile: bank-service/Dockerfile
+    image: powerbank/bank-service:local
+    ports: ["8080:8080"]
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/bank
+      SPRING_TEMPORAL_CONNECTION_TARGET: temporal:7233
+      MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT: http://lgtm:4318/v1/traces
+      MANAGEMENT_OPENTELEMETRY_LOGGING_EXPORT_OTLP_ENDPOINT: http://lgtm:4318/v1/logs
+      MANAGEMENT_OTLP_METRICS_EXPORT_URL: http://lgtm:4318/v1/metrics
+    healthcheck:
+      # the JRE image has bash but no curl: a plain HTTP request over /dev/tcp
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /actuator/health HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q UP <&3"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+      start_period: 20s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      temporal:
+        condition: service_healthy
+      lgtm:
+        condition: service_started
+  traffic:
+    profiles: [showcase]
+    image: python:3.13-alpine
+    command: ["python", "-u", "/traffic.py"]
+    environment:
+      BANK_URL: http://bank-service:8080
+    volumes:
+      - ./showcase/traffic.py:/traffic.py:ro
+    depends_on:
+      bank-service:
+        condition: service_healthy
+
   # later for stage 9: hashicorp/vault in dev mode
 
 volumes:
