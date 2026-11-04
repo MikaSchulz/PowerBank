@@ -34,7 +34,7 @@
 - **IBAN in the workflow:** for external transfers, the creditor IBAN is part of the workflow input. Stage 9 encrypts it
   with the payload codec. Even more data-minimizing: a payee ID that only the activity resolves.
 - **Changing a workflow strands the waiting ones:** moving the transfer's statuses into the ledger
-  ([decision 0007](decisions/0007-what-waits-in-a-workflow-and-what-is-domain-state.md)) changed the steps of the
+  ([decision 0007](decisions/0007-workflow-runs-the-process-domain-decides-and-records.md)) changed the steps of the
   transfer workflow. Transfers that were still running before (e.g. waiting for an approval) can't be replayed with the
   new code; locally they are terminated or the stack is reset. From now on such changes need `Workflow.getVersion`
   (stage 11, [#16](https://github.com/MikaSchulz/PowerBank/issues/16)).

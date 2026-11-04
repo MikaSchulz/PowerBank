@@ -32,7 +32,7 @@ ID `transfer-<transferId>`):
 3. **External bank (saga):** debit, the money goes to the clearing account (`SENT_TO_EXTERNAL_BANK`) → external bank
    → `COMPLETED`, or `REFUNDED` on rejection.
 
-Who decides what ([decision 0007](decisions/0007-what-waits-in-a-workflow-and-what-is-domain-state.md)):
+Who decides what ([decision 0007](decisions/0007-workflow-runs-the-process-domain-decides-and-records.md)):
 
 | | Decides | Lives in |
 | --- | --- | --- |
@@ -45,6 +45,82 @@ RECEIVED ─┬─────────────────────�
           └→ AWAITING_APPROVAL → APPROVED ┴─→ SENT_TO_EXTERNAL_BANK ─┬→ COMPLETED
                                                                       └→ REFUNDED
 RECEIVED, AWAITING_APPROVAL, APPROVED ─→ REJECTED (nothing booked)
+```
+
+### A transfer with an approval, step by step
+
+- **Blue, the workflow:** the process itself. It decides what comes next, waits and reacts to the approval or the
+  deadline.
+- **Orange, the activities:** every side effect, retried by Temporal until it succeeds.
+- **Green, domain and ledger:** the rules (deciders) and the business state (Postgres). They are the only place that
+  decides whether a step is allowed and what the status becomes.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor C as Customer (UI)
+    participant API as REST API
+    box rgb(232, 240, 254) Workflow: the process, in Temporal
+        participant WF as TransferWorkflow
+        participant T as Temporal server<br/>(history, timers)
+    end
+    box rgb(254, 243, 224) Activities: side effects with retries
+        participant RA as RiskActivities
+        participant LA as LedgerActivities
+    end
+    box rgb(230, 244, 234) Domain and ledger: rules and business state
+        participant D as Transfer and<br/>account deciders
+        participant DB as Postgres<br/>(transfers, transfer_events, postings)
+    end
+    actor E as Employee (UI)
+
+    C->>API: POST /api/transfers (above the approval limit)
+    API->>D: ReceiveTransfer
+    D->>DB: status RECEIVED
+    API->>T: start workflow transfer-{id}
+    API-->>C: 202 Accepted
+
+    T->>WF: run
+    WF->>RA: assess
+    RA-->>WF: review required
+    WF->>LA: requireApproval
+    LA->>D: RequireApproval
+    D->>DB: status AWAITING_APPROVAL (+ history)
+    LA-->>WF: AWAITING_APPROVAL
+
+    rect rgb(245, 245, 245)
+        Note over WF,T: Workflow.await(3 days): nothing runs, no thread is blocked.<br/>Temporal keeps the open workflow and a durable timer.
+        Note over DB: The business state is visible all the time:<br/>UI, SQL, dashboards and alerts see AWAITING_APPROVAL
+    end
+
+    alt approved within 3 days
+        E->>API: POST /api/transfers/{id}/approval
+        API->>T: update "approve"
+        T->>WF: validator, then approve(decision)
+        WF->>LA: decideApproval(approved)
+        LA->>D: Approve
+        D->>DB: status APPROVED
+        LA-->>WF: APPROVED
+        WF-->>API: update result APPROVED
+        API-->>E: 200 OK
+        WF->>LA: bookInternalTransfer
+        Note over LA,DB: one transaction: BookTransfer, then debit and credit
+        LA->>D: BookTransfer, Debit, Credit
+        D->>DB: status BOOKED + 2 postings
+        opt Postgres briefly unreachable
+            LA--xT: attempt fails
+            T->>LA: retry with backoff (idempotent: same transfer ID)
+            Note over WF: the workflow code doesn't notice retries
+        end
+        LA-->>WF: BOOKED
+    else no decision within 3 days
+        T->>WF: timer fires
+        WF->>LA: expireApproval
+        LA->>D: ExpireApproval
+        D->>DB: status REJECTED "No approval within the deadline"
+        LA-->>WF: REJECTED
+    end
+    WF->>T: workflow completed
 ```
 
 ## Ledger
