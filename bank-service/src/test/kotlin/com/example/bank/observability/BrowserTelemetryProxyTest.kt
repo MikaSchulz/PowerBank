@@ -81,7 +81,7 @@ class BrowserTelemetryProxyTest @Autowired constructor(private val mvc: MockMvc)
         mvc.post("/api/otel/v1/logs") {
             contentType = MediaType.APPLICATION_JSON
             content = ByteArray(2 * 1024 * 1024 + 1)
-        }.andExpect { status { isPayloadTooLarge() } }
+        }.andExpect { status { isContentTooLarge() } }
 
         assertTrue(collector.received.isEmpty())
     }

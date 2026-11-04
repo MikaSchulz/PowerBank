@@ -6,7 +6,7 @@
 Accounts, transfers and (soon) standing orders, running entirely locally. **The ledger is the source of truth**,
 Temporal orchestrates everything that takes time or crosses system boundaries, and **fmodel** makes the business decisions.
 
-**Stack:** Kotlin 2.3, Spring Boot 4.1, Temporal Java SDK 1.40 with the Spring Boot starter, fmodel 3.7, Postgres 18,
+**Stack:** Kotlin 2.4, Spring Boot 4.1, Temporal Java SDK 1.40 with the Spring Boot starter, fmodel 3.7, Postgres 18,
 OpenTelemetry with Grafana LGTM, Gradle 9.
 
 ## What it does
