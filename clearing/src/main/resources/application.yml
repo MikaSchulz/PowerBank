@@ -1,0 +1,59 @@
+# The clearing house (#58): between the banks, like a SEPA Instant CSM. Same local stack as the banks
+# (docker compose up -d --wait): its own Postgres schema and Temporal namespace.
+spring:
+  application:
+    name: clearing
+  datasource:
+    url: jdbc:postgresql://localhost:5432/bank?currentSchema=clearing
+    username: bank
+    password: bank   # local only, as in compose.yaml
+  flyway:
+    schemas: clearing
+  temporal:
+    connection:
+      target: localhost:7233
+    namespace: clearing
+    workers-auto-discovery:
+      packages:
+        - com.example.clearing
+
+server:
+  port: 8090
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  tracing:
+    sampling:
+      probability: 1.0
+  opentelemetry:
+    tracing:
+      export:
+        otlp:
+          endpoint: http://localhost:4318/v1/traces
+    logging:
+      export:
+        otlp:
+          endpoint: http://localhost:4318/v1/logs
+  otlp:
+    metrics:
+      export:
+        url: http://localhost:4318/v1/metrics
+        step: 10s
+
+jdbc:
+  datasource-proxy:
+    include-parameter-values: false   # SQL in spans, but never the bound values (IBANs, amounts)
+
+clearing:
+  deadline: 10s               # SCT Inst: the creditor bank has to answer within it
+  liquidity-cents: 100000000  # every participant starts with 1,000,000.00 € on its settlement account
+  participants:               # routed by the bank code in the creditor's IBAN
+    - bank-code: "99000001"
+      bic: PWRBDEFFXXX
+      url: http://localhost:8080
+    - bank-code: "99000002"
+      bic: PTNRDEFFXXX
+      url: http://localhost:8081

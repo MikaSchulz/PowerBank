@@ -54,7 +54,7 @@ services:
     # --db-filename: the dev server keeps workflows in SQLite on a volume instead of in memory, so running
     # transfers survive a restart. Ledger (Postgres) and workflows (Temporal) belong together: reset both at once
     # with `docker compose down -v`, never only one of them. Namespaces keep workflows apart: default for bank A,
-    # bank-b for the second bank (#57), integration-test for ./gradlew integrationTest.
+    # bank-b for the second bank (#57), clearing for the clearing house (#58), integration-test for the tests.
     # The server logs only to stdout; a pipe copies its JSON output to a file the collector reads. `exec` keeps the
     # server as the main process, so it still shuts down cleanly on `docker compose stop`.
     entrypoint: ["/bin/sh", "-c"]
@@ -64,7 +64,7 @@ services:
         rm -f /tmp/log.pipe && mkfifo /tmp/log.pipe
         tee -a /home/temporal/logs/temporal.log < /tmp/log.pipe &
         exec temporal server start-dev --ip 0.0.0.0 --db-filename /home/temporal/temporal.db \
-          --namespace bank-b --namespace integration-test --metrics-port 9233 --log-format json > /tmp/log.pipe 2>&1
+          --namespace bank-b --namespace clearing --namespace integration-test --metrics-port 9233 --log-format json > /tmp/log.pipe 2>&1
     ports: ["7233:7233", "8233:8233"]
     healthcheck:
       test: ["CMD", "temporal", "operator", "cluster", "health"]
@@ -102,7 +102,7 @@ services:
     profiles: [showcase]
     build:
       context: .
-      dockerfile: bank-service/Dockerfile
+      dockerfile: Dockerfile
     image: powerbank/bank-service:local
     ports: ["8080:8080"]
     environment:
@@ -145,7 +145,7 @@ services:
     profiles: [bank-b]
     build:
       context: .
-      dockerfile: bank-service/Dockerfile
+      dockerfile: Dockerfile
     image: powerbank/bank-service:local
     ports: ["8081:8081"]
     environment:
@@ -157,6 +157,47 @@ services:
       MANAGEMENT_OTLP_METRICS_EXPORT_URL: http://lgtm:4318/v1/metrics
     healthcheck:
       test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8081 && printf 'GET /actuator/health HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q UP <&3"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+      start_period: 20s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      temporal:
+        condition: service_healthy
+      lgtm:
+        condition: service_started
+
+  # --- Clearing house: between the banks, like a SEPA Instant CSM (#58) ---------------------------------------------
+  #   docker compose --profile clearing up -d --build --wait    API: http://localhost:8090/api/clearing
+  # Its own Postgres schema (clearing) and Temporal namespace (clearing). It reaches the banks on the host: bank A
+  # (bootRun, port 8080) and bank B (port 8081). For development: ./gradlew :clearing:bootRun
+  clearing:
+    profiles: [clearing]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        MODULE: clearing
+    image: powerbank/clearing:local
+    ports: ["8090:8090"]
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/bank?currentSchema=clearing
+      SPRING_TEMPORAL_CONNECTION_TARGET: temporal:7233
+      # The whole participant list: a list from another source replaces the one in application.yml.
+      CLEARING_PARTICIPANTS_0_BANKCODE: "99000001"
+      CLEARING_PARTICIPANTS_0_BIC: PWRBDEFFXXX
+      CLEARING_PARTICIPANTS_0_URL: http://host.docker.internal:8080
+      CLEARING_PARTICIPANTS_1_BANKCODE: "99000002"
+      CLEARING_PARTICIPANTS_1_BIC: PTNRDEFFXXX
+      CLEARING_PARTICIPANTS_1_URL: http://host.docker.internal:8081
+      MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT: http://lgtm:4318/v1/traces
+      MANAGEMENT_OPENTELEMETRY_LOGGING_EXPORT_OTLP_ENDPOINT: http://lgtm:4318/v1/logs
+      MANAGEMENT_OTLP_METRICS_EXPORT_URL: http://lgtm:4318/v1/metrics
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8090 && printf 'GET /actuator/health HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q UP <&3"]
       interval: 3s
       timeout: 5s
       retries: 40

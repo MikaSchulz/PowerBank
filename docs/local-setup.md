@@ -45,6 +45,17 @@ next to bank A in the same containers. Its settings are in `application-bank-b.y
 or as a container: `docker compose --profile bank-b up -d --build --wait`. UI: http://localhost:8081. The two banks
 don't see each other's accounts or workflows; payments between them come with the clearing house (#58).
 
+## The clearing house
+
+Between the banks runs the clearing house (#58), its own service with its own schema and Temporal namespace:
+
+```bash
+./gradlew :clearing:bootRun
+```
+
+or as a container: `docker compose --profile clearing up -d --build --wait`. API: http://localhost:8090/api/clearing,
+e.g. `GET /payments` and `GET /settlement-accounts`. It reaches bank A on port 8080 and bank B on port 8081.
+
 ## Data and reset
 
 Ledger and workflows are kept on Docker volumes (`postgres-data`, `temporal-data`): running transfers survive a

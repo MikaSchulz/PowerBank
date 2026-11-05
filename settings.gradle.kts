@@ -4,7 +4,7 @@ plugins {
 }
 
 rootProject.name = "temporal-bank"
-include("domain", "bank-service")
+include("domain", "payment-messages", "bank-service", "clearing")
 
 dependencyResolutionManagement {
     repositories { mavenCentral() }
