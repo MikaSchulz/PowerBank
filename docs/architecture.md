@@ -6,6 +6,8 @@ Decisions behind it: [decisions](decisions/README.md).
 
 ```
 domain/          fmodel deciders (account, transfer) and risk rules: pure business logic, only fmodel + coroutines
+payment-messages/  the ISO 20022 messages banks and the clearing house exchange (pacs.008, pacs.002, pacs.028)
+clearing/        the clearing house (#58): its own service between the banks, see below
 observability/grafana/  dashboards and alert rules, mounted into the LGTM container by compose.yaml
 observability/otel-collector/  collector config for Temporal server and Postgres metrics and logs
 bank-service/
@@ -147,6 +149,26 @@ sequenceDiagram
 The same bank-service runs as bank A (defaults) and bank B (profile `bank-b`): own identity (`bank.identity`: name,
 BIC, bank code), own Postgres schema, own Temporal namespace, own `service.name` (`bank-a`, `bank-b`) in the
 telemetry. `BankInstancesTest` checks that the two configurations share nothing but the containers.
+
+## The clearing house
+
+A separate service (`clearing`, port 8090) between the banks, modelled on a SEPA Instant clearing and settlement
+mechanism (#55). It has its own Postgres schema and Temporal namespace (`clearing`) and the same split as the banks
+([decision 0007](decisions/0007-workflow-runs-the-process-domain-decides-and-records.md)):
+
+- **Books:** a settlement account per participant (central bank money, funded at startup), a `reserved` account for
+  payments in flight, double-entry postings per payment. The payment decider decides every status change.
+- **One workflow per payment** (`payment-<uetr>`):
+  1. reserve the amount on the debtor bank's settlement account; without enough liquidity: rejected (`AM04`);
+  2. forward the `pacs.008` to the creditor bank, routed by the bank code in the IBAN (unknown bank: `RC01`);
+  3. wait for its `pacs.002` (an update) until the deadline, 10 seconds;
+  4. on acceptance settle (reserved → creditor bank), otherwise release the reservation (the creditor's reason code,
+     or `AB05` without an answer in time);
+  5. confirm the result to both banks.
+- **API** (`/api/clearing`): `pacs008` from debtor banks, `pacs002` answers from creditor banks, `pacs028` status
+  inquiries, and for operations the payments, the settlement balances and chaos settings (delayed or lost forwards).
+- Banks receive messages at `POST /api/clearing/inbound/pacs008` and `…/pacs002`; the banks implement them in #59 and
+  #60.
 
 ## Architecture rules
 
