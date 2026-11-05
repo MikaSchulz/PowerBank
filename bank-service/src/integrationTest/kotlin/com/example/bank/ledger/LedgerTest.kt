@@ -1,8 +1,10 @@
 package com.example.bank.ledger
 
 import com.example.bank.IntegrationTest
+import com.example.bank.config.BankIdentity
 import com.example.bank.customer.CustomerRecords
 import com.example.bank.domain.AccountId
+import com.example.bank.domain.Iban
 import com.example.bank.domain.TransferId
 import com.example.bank.domain.transfer.TransferKind
 import com.example.bank.domain.transfer.TransferStatus
@@ -25,6 +27,7 @@ class LedgerTest @Autowired constructor(
     private val queries: LedgerQueries,
     private val customers: CustomerRecords,
     private val transfers: TransferRecords,
+    private val identity: BankIdentity,
     private val jdbc: JdbcClient,
     private val tx: TransactionTemplate,
 ) {
@@ -190,6 +193,19 @@ class LedgerTest @Autowired constructor(
         ledger.bookInternalTransfer(newTransfer(), a, SystemAccounts.CASH, 5_00)
         assertTrue(ledger.closeAccount(a).booked)
         assertEquals("CLOSED", queries.account(a)?.status)
+    }
+
+    @Test
+    fun `every customer account gets its own IBAN of this bank`() {
+        val a = newAccount()
+        val b = newAccount()
+
+        val ibanA = Iban.parse(checkNotNull(queries.account(a)?.iban))
+        val ibanB = Iban.parse(checkNotNull(queries.account(b)?.iban))
+        assertTrue(ibanA != ibanB)
+        assertEquals(identity.bankCode, ibanA.value.substring(4, 12), "the bank code is part of the IBAN")
+        assertEquals(a.value, queries.accountByIban(ibanA)?.id)
+        assertEquals(null, queries.account(SystemAccounts.SETTLEMENT)?.iban, "system accounts have no IBAN")
     }
 
     @Test

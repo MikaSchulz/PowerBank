@@ -2,6 +2,7 @@ package com.example.bank.domain.account
 
 import com.example.bank.domain.AccountId
 import com.example.bank.domain.CustomerId
+import com.example.bank.domain.Iban
 import com.example.bank.domain.TransferId
 
 /**
@@ -33,6 +34,8 @@ data class AccountOpened(
     val customerId: CustomerId?,
     val kind: AccountKind,
     val overdraftLimitCents: Long,
+    /** Null for system accounts, and for customer accounts opened before IBANs existed. */
+    val iban: Iban? = null,
 ) : AccountEvent
 
 data class Debited(

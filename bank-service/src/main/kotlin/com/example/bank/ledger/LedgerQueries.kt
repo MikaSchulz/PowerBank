@@ -1,6 +1,7 @@
 package com.example.bank.ledger
 
 import com.example.bank.domain.AccountId
+import com.example.bank.domain.Iban
 import com.example.bank.domain.TransferId
 import com.example.bank.domain.transfer.TransferStatus
 import org.springframework.jdbc.core.simple.JdbcClient
@@ -15,6 +16,8 @@ data class AccountView(
     val kind: String,
     val overdraftLimitCents: Long,
     val balanceCents: Long,
+    /** Customer accounts only. Personal data: shown to people, never in telemetry. */
+    val iban: String?,
 )
 
 /** Health of the ledger: with double-entry bookkeeping, the sum of all postings must be zero. */
@@ -42,7 +45,7 @@ class LedgerQueries(private val jdbc: JdbcClient) {
     fun accounts(): List<AccountView> =
         jdbc.sql(
             """
-            SELECT a.id, a.status, a.kind, a.overdraft_limit_cents, COALESCE(SUM(p.amount_cents), 0) AS balance
+            SELECT a.id, a.status, a.kind, a.overdraft_limit_cents, a.iban, COALESCE(SUM(p.amount_cents), 0) AS balance
             FROM accounts a LEFT JOIN postings p ON p.account_id = a.id
             GROUP BY a.id
             ORDER BY a.kind, a.id
@@ -70,15 +73,20 @@ class LedgerQueries(private val jdbc: JdbcClient) {
             }
             .single()
 
-    fun account(id: AccountId): AccountView? =
+    fun account(id: AccountId): AccountView? = accountWhere("a.id = :key", id.value)
+
+    /** The account an IBAN of this bank belongs to, e.g. for an incoming payment (#60). */
+    fun accountByIban(iban: Iban): AccountView? = accountWhere("a.iban = :key", iban.value)
+
+    private fun accountWhere(condition: String, key: Any): AccountView? =
         jdbc.sql(
             """
-            SELECT a.id, a.status, a.kind, a.overdraft_limit_cents,
+            SELECT a.id, a.status, a.kind, a.overdraft_limit_cents, a.iban,
                    COALESCE((SELECT SUM(p.amount_cents) FROM postings p WHERE p.account_id = a.id), 0) AS balance
-            FROM accounts a WHERE a.id = :id
+            FROM accounts a WHERE $condition
             """,
         )
-            .param("id", id.value)
+            .param("key", key)
             .query { rs, _ -> toAccountView(rs) }
             .optional()
             .orElse(null)
@@ -119,6 +127,7 @@ class LedgerQueries(private val jdbc: JdbcClient) {
         kind = rs.getString("kind"),
         overdraftLimitCents = rs.getLong("overdraft_limit_cents"),
         balanceCents = rs.getLong("balance"),
+        iban = rs.getString("iban"),
     )
 
     private fun postings(column: String, id: UUID): List<PostingView> =

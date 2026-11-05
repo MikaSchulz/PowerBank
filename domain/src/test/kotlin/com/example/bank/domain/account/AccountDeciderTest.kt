@@ -2,6 +2,7 @@ package com.example.bank.domain.account
 
 import com.example.bank.domain.AccountId
 import com.example.bank.domain.CustomerId
+import com.example.bank.domain.Iban
 import com.example.bank.domain.TransferId
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
@@ -12,6 +13,7 @@ class AccountDeciderTest {
 
     private val account = AccountId(UUID.randomUUID())
     private val customer = CustomerId(UUID.randomUUID())
+    private val iban = Iban.german("99000001", 1_000_000_001)
     private val t1 = TransferId(UUID.randomUUID())
     private val t2 = TransferId(UUID.randomUUID())
     private val t3 = TransferId(UUID.randomUUID())
@@ -24,10 +26,22 @@ class AccountDeciderTest {
     @Nested
     inner class Opening {
         @Test
-        fun `a new account is opened`() =
+        fun `a new account is opened with its IBAN`() =
             accountDecider.given()
-                .whenCommand(OpenAccount(account, customer, overdraftLimitCents = 100_00))
-                .thenEvents(AccountOpened(account, customer, AccountKind.CUSTOMER, 100_00))
+                .whenCommand(OpenAccount(account, customer, overdraftLimitCents = 100_00, iban = iban))
+                .thenEvents(AccountOpened(account, customer, AccountKind.CUSTOMER, 100_00, iban))
+
+        @Test
+        fun `a customer account needs an IBAN`() =
+            accountDecider.given()
+                .whenCommand(OpenAccount(account, customer))
+                .thenEvents(AccountCommandRejected(account, "Customer account requires an IBAN"))
+
+        @Test
+        fun `a system account has no IBAN`() =
+            accountDecider.given()
+                .whenCommand(OpenAccount(account, null, AccountKind.SYSTEM, iban = iban))
+                .thenEvents(AccountCommandRejected(account, "System accounts have no IBAN"))
 
         @Test
         fun `account already exists`() =

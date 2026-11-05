@@ -3,11 +3,14 @@
 # SPRING_DATASOURCE_URL.
 spring:
   application:
-    name: bank-service
+    name: bank-a   # service.name in the telemetry; bank B is bank-b (application-bank-b.yml)
   datasource:
     url: jdbc:postgresql://localhost:5432/bank
     username: bank
     password: bank   # local only, as in compose.yaml
+  flyway:
+    placeholders:
+      bankCode: ${bank.identity.bank-code}   # IBANs of existing accounts (V6)
   temporal:
     connection:
       # Not "local": with that shortcut the Temporal SDK reports no metrics (temporal_*) in this setup.
@@ -53,6 +56,10 @@ jdbc:
     include-parameter-values: false   # SQL in spans, but never the bound values (personal data)
 
 bank:
+  identity:   # bank A; bank B in application-bank-b.yml. Made-up codes: 99… is not assigned to real banks.
+    name: PowerBank
+    bic: PWRBDEFFXXX
+    bank-code: "99000001"
   risk:
     review-threshold-cents: 1000000          # manual approval from 10,000 €
     external-review-threshold-cents: 500000  # to external banks from 5,000 €

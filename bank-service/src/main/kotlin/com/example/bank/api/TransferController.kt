@@ -1,5 +1,6 @@
 package com.example.bank.api
 
+import com.example.bank.domain.Iban
 import com.example.bank.domain.TransferId
 import com.example.bank.ledger.LedgerQueries
 import com.example.bank.ledger.PostingView
@@ -48,7 +49,7 @@ class TransferController(
             debtorAccountId = body.debtorAccountId,
             amountCents = body.amountCents,
             creditorAccountId = body.creditorAccountId,
-            creditorIban = body.creditorIban?.let(Iban::normalize),
+            creditorIban = body.creditorIban?.let { Iban.parse(it).value },
         )
         val traceId = transfers.start(request)
         return accepted(request.transferId, traceId)

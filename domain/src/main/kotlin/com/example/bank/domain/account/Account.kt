@@ -1,6 +1,7 @@
 package com.example.bank.domain.account
 
 import com.example.bank.domain.CustomerId
+import com.example.bank.domain.Iban
 
 enum class AccountKind {
     /** Customer account: needs sufficient funds (balance plus overdraft). */
@@ -19,6 +20,7 @@ data class Account(
     val kind: AccountKind = AccountKind.CUSTOMER,
     val balanceCents: Long = 0,
     val overdraftLimitCents: Long = 0,
+    val iban: Iban? = null,
 ) {
     val exists: Boolean get() = status != null
 
