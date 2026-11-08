@@ -20,7 +20,7 @@ class ApiExceptionHandler {
     @ExceptionHandler(IllegalArgumentException::class)
     fun badRequest(e: IllegalArgumentException) = problem(HttpStatus.BAD_REQUEST, e.message)
 
-    /** Malformed JSON or a constructor check failing during deserialization (e.g. invalid simulator settings). */
+    /** Malformed JSON or a constructor check failing during deserialization (e.g. a pacs.002 without a UETR). */
     @ExceptionHandler(HttpMessageNotReadableException::class)
     fun unreadable(e: HttpMessageNotReadableException) =
         problem(HttpStatus.BAD_REQUEST, (e.mostSpecificCause as? IllegalArgumentException)?.message ?: "Malformed request body")

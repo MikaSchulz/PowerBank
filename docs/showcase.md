@@ -32,12 +32,11 @@ Don't run it next to `./gradlew :bank-service:bootRun`: both use port 8080.
 About one action every second or two, through the same REST API the UI uses:
 
 - **Accounts:** opens six accounts with deposits.
-- **Everyday traffic:** internal transfers, transfers to external banks (some to an IBAN the simulator always rejects) and deposits.
+- **Everyday traffic:** internal transfers and deposits. No transfers to other banks for now: they go through the
+  clearing house (which the showcase starts too), and until bank B answers payments (#60) every one would be
+  rejected. They come back with #62.
 - **Approvals:** now and then a transfer above the approval limit. The generator approves or denies it 5 to 20 seconds later; 7 out of 10 get approved.
 - **Bursts:** sometimes 10 concurrent transfers between the same two accounts, to show the row locks at work.
-- **Chaos phase:** five minutes after the start the external bank goes into "chaos" for four minutes (80 % rejections,
-  15 % technical failures), then again every 20 minutes, so its alerts fire and resolve again. Outside of it, about
-  15 % of the external transfers get refunded, well below the alert's 30 %.
 
 The accounts have no names: the bank only knows pseudonymous IDs (see [decision 0004](decisions/0004-no-personal-data-in-telemetry.md)).
 
@@ -45,23 +44,19 @@ The accounts have no names: the bank only knows pseudonymous IDs (see [decision 
 
 1. **The UI** (http://localhost:8080): transfers keep coming in. The generated accounts show up with their IDs, because nicknames only live in your browser. Open two accounts of your own with *New account* (give them nicknames), deposit something and send a transfer between them.
 2. **One transfer from the click to the SQL:** open your transfer in the drawer and follow *Trace in Grafana*. You see the click in the browser (`bank-ui`), the REST call, the workflow with its activities, the row lock and the SQL statements, all in one trace.
-   The transfers of the generator have the same trace, only without the browser part. Here an external transfer the
-   external bank rejected: risk check, debit with the row lock and the SQL, the call to the external bank, the refund.
-
-   ![A refunded external transfer of the demo traffic in Tempo](images/showcase-trace.png)
+   The transfers of the generator have the same trace, only without the browser part. An external transfer you send
+   in the UI shows the reservation, the `pacs.008` to the clearing house (`bank.clearing.call`) and, in the same
+   trace, the clearing house's own spans.
 3. **The overview dashboard** (Grafana → Dashboards → PowerBank → *PowerBank overview*):
    - transfers per minute by outcome;
    - the ledger sum, which stays at 0;
    - lock waits rising during a burst;
-   - the external bank's outcomes.
-4. **Alerts:** the first chaos phase starts five minutes after the start and lasts four minutes. On the dashboard and
-   under Alerting → Alert rules (times from a test run):
-   - the external bank panel shows rejections and refunds rising;
-   - "Many external transfers refunded" fires after about three and a half minutes of chaos;
-   - "External bank does not accept payments" becomes pending a little later and fires about a minute after the chaos
-     ended: it looks at the last 5 minutes and waits one more minute to be sure;
-   - it resolves about four minutes after the chaos, the refund alert (last 15 minutes) about 13 minutes after it,
-     a few minutes before the next chaos phase.
+   - the calls to the clearing house.
+4. **Alerts:** stop the clearing house (`docker compose stop clearing`) and send a few external transfers in the UI.
+   They stay *Reserved*; "Clearing house not reachable" fires after about a minute, and after 5 minutes without a
+   final status the transfers go *Under investigation* and "External transfer under investigation" fires. Start it
+   again (`docker compose start clearing`): at the next status inquiry (every 10 minutes) the bank learns the clearing
+   house never got the payments and refunds them.
 5. **Approvals in Temporal** (http://localhost:8233): a `TransferWorkflow` waiting for an approval shows the workflow, its `status` query and, once decided, the `approve` update in its history. In the UI you can approve or deny it yourself before the generator does.
 6. **Break something** and watch the system cope:
    - `docker compose stop temporal`: no transfer can start; after about two minutes "Temporal server down" fires. `docker compose start temporal`: everything continues where it stopped, because the workflows are on a volume.

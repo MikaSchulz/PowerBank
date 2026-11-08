@@ -43,7 +43,7 @@ next to bank A in the same containers. Its settings are in `application-bank-b.y
 ```
 
 or as a container: `docker compose --profile bank-b up -d --build --wait`. UI: http://localhost:8081. The two banks
-don't see each other's accounts or workflows; payments between them come with the clearing house (#58).
+don't see each other's accounts or workflows; payments between them go through the clearing house.
 
 ## The clearing house
 
@@ -55,6 +55,12 @@ Between the banks runs the clearing house (#58), its own service with its own sc
 
 or as a container: `docker compose --profile clearing up -d --build --wait`. API: http://localhost:8090/api/clearing,
 e.g. `GET /payments` and `GET /settlement-accounts`. It reaches bank A on port 8080 and bank B on port 8081.
+
+External transfers go through it (SEPA Instant, #59): the banks send their payments to `bank.clearing.url`
+(default `http://localhost:8090`). Without it, an external transfer stays reserved and goes under investigation
+after 5 minutes; once the clearing house is back, the next status inquiry settles or refunds it. Until bank B answers
+payments (#60), the clearing house rejects every payment to it after the deadline (`AB05`), and payments to banks
+that aren't participants right away (`RC01`).
 
 ## Data and reset
 

@@ -108,6 +108,7 @@ services:
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/bank
       SPRING_TEMPORAL_CONNECTION_TARGET: temporal:7233
+      BANK_CLEARING_URL: http://clearing:8090
       MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT: http://lgtm:4318/v1/traces
       MANAGEMENT_OPENTELEMETRY_LOGGING_EXPORT_OTLP_ENDPOINT: http://lgtm:4318/v1/logs
       MANAGEMENT_OTLP_METRICS_EXPORT_URL: http://lgtm:4318/v1/metrics
@@ -152,6 +153,7 @@ services:
       SPRING_PROFILES_ACTIVE: bank-b
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/bank?currentSchema=bank_b
       SPRING_TEMPORAL_CONNECTION_TARGET: temporal:7233
+      BANK_CLEARING_URL: http://clearing:8090
       MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT: http://lgtm:4318/v1/traces
       MANAGEMENT_OPENTELEMETRY_LOGGING_EXPORT_OTLP_ENDPOINT: http://lgtm:4318/v1/logs
       MANAGEMENT_OTLP_METRICS_EXPORT_URL: http://lgtm:4318/v1/metrics
@@ -172,9 +174,10 @@ services:
   # --- Clearing house: between the banks, like a SEPA Instant CSM (#58) ---------------------------------------------
   #   docker compose --profile clearing up -d --build --wait    API: http://localhost:8090/api/clearing
   # Its own Postgres schema (clearing) and Temporal namespace (clearing). It reaches the banks on the host: bank A
-  # (bootRun, port 8080) and bank B (port 8081). For development: ./gradlew :clearing:bootRun
+  # (bootRun or the showcase, port 8080) and bank B (port 8081). External transfers go through it (#59), so the
+  # showcase starts it too. For development: ./gradlew :clearing:bootRun
   clearing:
-    profiles: [clearing]
+    profiles: [clearing, showcase]
     build:
       context: .
       dockerfile: Dockerfile

@@ -2,7 +2,9 @@ package com.example.bank.ledger
 
 import com.example.bank.domain.AccountId
 import com.example.bank.domain.TransferId
+import com.example.bank.domain.transfer.AmountReserved
 import com.example.bank.domain.transfer.ApprovalRequired
+import com.example.bank.domain.transfer.InvestigationStarted
 import com.example.bank.domain.transfer.TransferApproved
 import com.example.bank.domain.transfer.TransferBooked
 import com.example.bank.domain.transfer.TransferCommand
@@ -14,6 +16,7 @@ import com.example.bank.domain.transfer.TransferReceived
 import com.example.bank.domain.transfer.TransferRefunded
 import com.example.bank.domain.transfer.TransferRejected
 import com.example.bank.domain.transfer.TransferSentToExternalBank
+import com.example.bank.domain.transfer.TransferSettled
 import com.example.bank.domain.transfer.TransferStatusChanged
 import com.fraktalio.fmodel.application.EventRepository
 import kotlinx.coroutines.flow.Flow
@@ -105,7 +108,10 @@ class TransferEventRepository(private val jdbc: JdbcClient) : EventRepository<Tr
             "ApprovalRequired" -> ApprovalRequired(id, reason.orEmpty())
             "TransferApproved" -> TransferApproved(id, reason)
             "TransferBooked" -> TransferBooked(id)
+            "AmountReserved" -> AmountReserved(id)
             "TransferSentToExternalBank" -> TransferSentToExternalBank(id)
+            "InvestigationStarted" -> InvestigationStarted(id, reason.orEmpty())
+            "TransferSettled" -> TransferSettled(id)
             "TransferCompleted" -> TransferCompleted(id)
             "TransferRefunded" -> TransferRefunded(id, reason.orEmpty())
             "TransferRejected" -> TransferRejected(id, reason.orEmpty())

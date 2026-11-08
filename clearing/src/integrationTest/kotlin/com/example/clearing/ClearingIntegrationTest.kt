@@ -1,5 +1,6 @@
 package com.example.clearing
 
+import com.example.clearing.config.ClearingProperties
 import com.example.clearing.domain.PaymentStatus
 import com.example.clearing.ledger.ClearingLedger
 import com.example.payments.messages.Pacs002
@@ -24,6 +25,8 @@ import tools.jackson.databind.json.JsonMapper
 import tools.jackson.module.kotlin.kotlinModule
 import tools.jackson.module.kotlin.readValue
 import java.net.InetSocketAddress
+import java.time.Duration
+import java.time.Instant
 import java.util.UUID
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.test.assertEquals
@@ -35,7 +38,7 @@ import kotlin.test.assertTrue
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles("integration")
-class ClearingIntegrationTest @Autowired constructor(private val ledger: ClearingLedger) {
+class ClearingIntegrationTest @Autowired constructor(private val ledger: ClearingLedger, private val properties: ClearingProperties) {
 
     @LocalServerPort private var port = 0
 
@@ -105,6 +108,29 @@ class ClearingIntegrationTest @Autowired constructor(private val ledger: Clearin
     }
 
     @Test
+    fun `a payment that arrives after its deadline is refused and not recorded`() {
+        val late = payment(acceptedAt = Instant.now() - properties.deadline - Duration.ofSeconds(1))
+
+        val error = runCatching { post("/pacs008", late) }.exceptionOrNull()
+
+        assertEquals(HttpStatus.UNPROCESSABLE_CONTENT, (error as? HttpClientErrorException)?.statusCode)
+        assertEquals(null, ledger.find(late.uetr))
+    }
+
+    @Test
+    fun `the deadline runs from the acceptance at the debtor bank`() {
+        bankB.behaviour = Behaviour.SILENT
+        val elapsed = properties.deadline.multipliedBy(2).dividedBy(3)
+        val payment = payment(acceptedAt = Instant.now() - elapsed)
+        val started = System.nanoTime()
+        post("/pacs008", payment)
+
+        assertEquals(ReasonCodes.TIMEOUT_CREDITOR_AGENT, awaitFinished(payment.uetr).reasonCode)
+        val took = Duration.ofNanos(System.nanoTime() - started)
+        assertTrue(took < properties.deadline - elapsed.dividedBy(2), "only the rest of the deadline is left, took $took")
+    }
+
+    @Test
     fun `the settlement accounts always add up`() {
         assertEquals(0, balances().values.sum())
         assertTrue(balances().getValue(BANK_A) != 0L, "the participants are funded")
@@ -112,21 +138,20 @@ class ClearingIntegrationTest @Autowired constructor(private val ledger: Clearin
 
     // --- helpers ---
 
-    private fun send(amountCents: Long = 10_00, creditorIban: String = "DE10990000021000000001"): Pacs008 {
-        val payment =
-            Pacs008(
-                UUID.randomUUID(),
-                UUID.randomUUID(),
-                "transfer-1",
-                amountCents,
-                "EUR",
-                "DE38990000011000000001",
-                "PWRBDEFFXXX",
-                creditorIban,
-            )
-        post("/pacs008", payment)
-        return payment
-    }
+    private fun send(amountCents: Long = 10_00, creditorIban: String = "DE10990000021000000001"): Pacs008 =
+        payment(amountCents, creditorIban).also { post("/pacs008", it) }
+
+    private fun payment(amountCents: Long = 10_00, creditorIban: String = "DE10990000021000000001", acceptedAt: Instant = Instant.now()) =
+        Pacs008(
+            msgId = UUID.randomUUID(),
+            uetr = UUID.randomUUID(),
+            endToEndId = "transfer-1",
+            acceptanceDateTime = acceptedAt,
+            amountCents = amountCents,
+            debtorIban = "DE38990000011000000001",
+            debtorAgentBic = "PWRBDEFFXXX",
+            creditorIban = creditorIban,
+        )
 
     private fun post(path: String, body: Any) {
         clearing.post().uri(path).contentType(MediaType.APPLICATION_JSON).body(body).retrieve().toBodilessEntity()

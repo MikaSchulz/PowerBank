@@ -1,5 +1,6 @@
 package com.example.bank.workflow
 
+import com.example.payments.messages.Pacs002
 import io.temporal.workflow.QueryMethod
 import io.temporal.workflow.UpdateMethod
 import io.temporal.workflow.UpdateValidatorMethod
@@ -23,7 +24,9 @@ enum class TransferStatus(val terminal: Boolean = false) {
     RECEIVED,
     AWAITING_APPROVAL,
     APPROVED,
+    RESERVED,
     SENT_TO_EXTERNAL_BANK,
+    UNDER_INVESTIGATION,
     BOOKED(terminal = true),
     COMPLETED(terminal = true),
     REFUNDED(terminal = true),
@@ -57,4 +60,12 @@ interface TransferWorkflow {
     /** Rejects the update before it reaches the history if no approval is currently expected. */
     @UpdateValidatorMethod(updateName = "approve")
     fun validateApprove(decision: ApprovalDecision)
+
+    /** The clearing house's confirmation of an external transfer: a pacs.002 with ACSC (settled) or RJCT. */
+    @UpdateMethod
+    fun confirm(confirmation: Pacs002)
+
+    /** Rejects a confirmation nobody waits for: none expected, a second one, or one for another payment. */
+    @UpdateValidatorMethod(updateName = "confirm")
+    fun validateConfirm(confirmation: Pacs002)
 }

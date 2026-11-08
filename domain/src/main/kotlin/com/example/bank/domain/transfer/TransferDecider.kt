@@ -7,7 +7,9 @@ import com.example.bank.domain.transfer.TransferStatus.COMPLETED
 import com.example.bank.domain.transfer.TransferStatus.RECEIVED
 import com.example.bank.domain.transfer.TransferStatus.REFUNDED
 import com.example.bank.domain.transfer.TransferStatus.REJECTED
+import com.example.bank.domain.transfer.TransferStatus.RESERVED
 import com.example.bank.domain.transfer.TransferStatus.SENT_TO_EXTERNAL_BANK
+import com.example.bank.domain.transfer.TransferStatus.UNDER_INVESTIGATION
 import com.fraktalio.fmodel.domain.Decider
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
@@ -28,6 +30,9 @@ val transferDecider: Decider<TransferCommand, Transfer, TransferEvent> = Decider
 
 /** Statuses in which nothing has been booked or decided yet, so the transfer can still go either way. */
 private val OPEN = setOf(RECEIVED, APPROVED)
+
+/** External transfer between the reservation and its final status: the amount sits on the clearing account. */
+private val AMOUNT_RESERVED = setOf(RESERVED, SENT_TO_EXTERNAL_BANK, UNDER_INVESTIGATION)
 
 internal fun decide(c: TransferCommand, s: Transfer): Flow<TransferEvent> {
     if (c !is ReceiveTransfer && !s.exists) return reject(c, "Transfer does not exist")
@@ -72,12 +77,25 @@ internal fun decide(c: TransferCommand, s: Transfer): Flow<TransferEvent> {
             else -> notAllowed(c, s, "booked")
         }
 
-        is SendToExternalBank -> when {
+        is ReserveAmount -> when {
             s.kind == TransferKind.INTERNAL || s.kind == TransferKind.DEPOSIT -> reject(c, "Only external transfers go to an external bank")
-            s.status == SENT_TO_EXTERNAL_BANK -> emptyFlow()
             s.status == AWAITING_APPROVAL -> reject(c, "Transfer is awaiting approval")
-            s.status in OPEN -> flowOf(TransferSentToExternalBank(c.transferId))
+            s.status in OPEN -> flowOf(AmountReserved(c.transferId))
+            s.status in AMOUNT_RESERVED || s.status == COMPLETED || s.status == REFUNDED -> emptyFlow() // reserved before
+            else -> notAllowed(c, s, "reserved")
+        }
+
+        is SendToExternalBank -> when (s.status) {
+            RESERVED -> flowOf(TransferSentToExternalBank(c.transferId))
+            SENT_TO_EXTERNAL_BANK -> emptyFlow()
             else -> notAllowed(c, s, "sent to the external bank")
+        }
+
+        // Also from RESERVED: the clearing house may have received the payment although sending it seemed to fail.
+        is SettleTransfer -> when (s.status) {
+            in AMOUNT_RESERVED -> flowOf(TransferSettled(c.transferId))
+            COMPLETED -> emptyFlow()
+            else -> notAllowed(c, s, "settled")
         }
 
         is CompleteTransfer -> when (s.status) {
@@ -86,11 +104,17 @@ internal fun decide(c: TransferCommand, s: Transfer): Flow<TransferEvent> {
             else -> notAllowed(c, s, "completed")
         }
 
-        // Once the external bank accepted, the money is gone: no refund any more.
+        // Once settled, the money is gone: no refund any more.
         is RefundTransfer -> when (s.status) {
-            SENT_TO_EXTERNAL_BANK -> flowOf(TransferRefunded(c.transferId, c.reason))
+            in AMOUNT_RESERVED -> flowOf(TransferRefunded(c.transferId, c.reason))
             REFUNDED -> emptyFlow()
             else -> notAllowed(c, s, "refunded")
+        }
+
+        is StartInvestigation -> when (s.status) {
+            RESERVED, SENT_TO_EXTERNAL_BANK -> flowOf(InvestigationStarted(c.transferId, c.reason))
+            UNDER_INVESTIGATION -> emptyFlow()
+            else -> notAllowed(c, s, "investigated")
         }
 
         is RejectTransfer -> when (s.status) {

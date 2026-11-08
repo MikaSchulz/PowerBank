@@ -87,7 +87,7 @@ jobs:
 
       - name: Logs
         if: failure()
-        run: docker compose --profile showcase logs --no-color bank-service traffic | tail -n 200
+        run: docker compose --profile showcase logs --no-color bank-service clearing traffic | tail -n 200
 
       - name: Stop
         if: always()
