@@ -364,10 +364,6 @@ dialog::backdrop { background: rgba(8, 10, 18, .45); backdrop-filter: blur(2px);
 .dialog-form { display: grid; gap: 14px; padding: 22px; }
 .dialog-form .hint { margin-top: -6px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
-.field.range input { height: auto; padding: 0; accent-color: var(--accent); border: 0; box-shadow: none; }
-.field.range > span:first-child { display: flex; justify-content: space-between; }
-.field.range output { color: var(--text); font-variant-numeric: tabular-nums; }
-.presets { display: flex; gap: 6px; flex-wrap: wrap; }
 
 /* ---------- toasts ---------- */
 

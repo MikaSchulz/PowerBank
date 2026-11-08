@@ -1,5 +1,6 @@
 package com.example.payments.messages
 
+import java.time.Instant
 import java.util.UUID
 
 /*
@@ -15,6 +16,11 @@ data class Pacs008(
     val uetr: UUID,
     /** The debtor's own reference; here the transfer ID of the debtor bank. */
     val endToEndId: String,
+    /**
+     * When the debtor bank accepted the payment (AccptncDtTm). The scheme's deadline runs from here: the clearing
+     * house refuses a payment that reaches it after the deadline, so a late retry can't revive it.
+     */
+    val acceptanceDateTime: Instant,
     val amountCents: Long,
     val currency: String = "EUR",
     val debtorIban: String,
@@ -73,6 +79,18 @@ object ReasonCodes {
 
     /** The creditor bank is not a participant of the clearing house. */
     const val UNKNOWN_CREDITOR_AGENT = "RC01"
+
+    /** A readable reason for customers and the back office, with the code: "Account closed (AC04)". */
+    fun describe(code: String?): String = when (code) {
+        null -> "No reason given"
+        INCORRECT_ACCOUNT -> "Incorrect account number ($code)"
+        CLOSED_ACCOUNT -> "Account closed ($code)"
+        BLOCKED_ACCOUNT -> "Account blocked ($code)"
+        INSUFFICIENT_FUNDS -> "Insufficient liquidity at the clearing house ($code)"
+        TIMEOUT_CREDITOR_AGENT -> "The creditor bank did not answer in time ($code)"
+        UNKNOWN_CREDITOR_AGENT -> "The creditor bank can't be reached through the clearing house ($code)"
+        else -> "Rejected with reason $code"
+    }
 }
 
 /** The German bank code in an IBAN (`DE` + 2 check digits + 8-digit bank code + …): how the clearing house routes. */

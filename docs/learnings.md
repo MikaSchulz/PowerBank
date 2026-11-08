@@ -20,15 +20,20 @@
 
 ## Known learning points
 
-- **External bank unreachable:** after 10 minutes the workflow refunds the debit. In real life it's then unclear
-  whether the external bank booked the payment after all; you'd need a status inquiry. The simulator is idempotent per
-  transfer ID, but forgets its decisions on restart.
+- **Unclear is not rejected:** before SEPA Instant (#59) the workflow refunded the debit after 10 minutes without an
+  answer from the simulated external bank, although the bank might have booked it after all. Now the money moves only
+  on a final status: a confirmation, an answer to a status inquiry, or "unknown" after the deadline, which is only
+  final because the clearing house refuses a payment that arrives late. Everything else is investigated, not guessed.
+- **A changed workflow with executions in flight:** the external part of the transfer workflow changed with #59.
+  `Workflow.getVersion` keeps executions from before on the old branch; the replay test proves it with the recorded
+  `v1` histories, and fails without the version check. The old branch and the simulator go once no old execution is
+  open any more.
 - **Hot rows:** every deposit locks the cash account, every external transfer locks the clearing account. System
   accounts wouldn't need a lock (they have no funds check) and no balance fold either. A candidate for the balance snapshot.
 - **Two stores, one truth:** the ledger lives in Postgres, the running transfers in Temporal. Locally both are on
   volumes and reset together (`docker compose down -v`); until [#40](https://github.com/MikaSchulz/PowerBank/issues/40) brought the volume, the dev server kept
   workflows in memory and lost them on every restart. If the two ever get out of sync, transfers stay in an
-  unfinished status (received, awaiting approval, sent to the external bank) without a workflow: the dashboard shows
+  unfinished status (received, awaiting approval, reserved, sent to the external bank) without a workflow: the dashboard shows
   them under *Oldest waiting transfer* and the alerts fire. A
   reconciliation job that finds them is planned in [#40](https://github.com/MikaSchulz/PowerBank/issues/40); in production Temporal needs its own database ([#36](https://github.com/MikaSchulz/PowerBank/issues/36)).
 - **IBAN in the workflow:** for external transfers, the creditor IBAN is part of the workflow input. Stage 9 encrypts it
@@ -36,8 +41,8 @@
 - **Changing a workflow strands the waiting ones:** moving the transfer's statuses into the ledger
   ([decision 0007](decisions/0007-workflow-runs-the-process-domain-decides-and-records.md)) changed the steps of the
   transfer workflow. Transfers that were still running before (e.g. waiting for an approval) can't be replayed with the
-  new code; locally they are terminated or the stack is reset. From now on such changes need `Workflow.getVersion`
-  (stage 11, [#16](https://github.com/MikaSchulz/PowerBank/issues/16)).
+  new code; locally they are terminated or the stack is reset. Since then such changes need `Workflow.getVersion`
+  (stage 11, [#16](https://github.com/MikaSchulz/PowerBank/issues/16)); #59 is the first one that uses it.
 - **A computed property on an activity DTO breaks the replay:** a `val rejected get() = …` on the activity result was
   serialized by Jackson into the history and then couldn't be read back, so the workflow task failed and retried
   forever; the workflow test hung instead of failing. Helpers on DTOs go into extension functions in the workflow.

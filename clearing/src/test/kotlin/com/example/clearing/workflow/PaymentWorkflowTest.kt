@@ -20,6 +20,7 @@ import io.temporal.testing.TestWorkflowEnvironment
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import java.time.Instant
 import java.util.UUID
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.test.assertEquals
@@ -124,6 +125,7 @@ class PaymentWorkflowTest {
         msgId = UUID.randomUUID(),
         uetr = UUID.randomUUID(),
         endToEndId = "transfer-1",
+        acceptanceDateTime = Instant.parse("2026-11-08T10:00:00Z"),
         amountCents = 100_00,
         debtorIban = "DE00990000011000000001",
         debtorAgentBic = "PWRBDEFFXXX",

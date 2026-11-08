@@ -46,6 +46,19 @@ class LedgerActivitiesImpl(private val ledger: Ledger) : LedgerActivities {
         }
     }
 
+    override fun reserveForExternalTransfer(debit: ExternalDebit): TransferOutcome {
+        BankSpans.tag(BankSpans.DEBTOR_ACCOUNT_ID to debit.debtorAccountId)
+        return change(debit.transferId) { ledger.reserveForExternalTransfer(it, AccountId(debit.debtorAccountId), debit.amountCents) }
+    }
+
+    override fun markSentToExternalBank(transferId: UUID) = change(transferId) { ledger.markSentToExternalBank(it) }
+
+    override fun settleExternalTransfer(transferId: UUID) = change(transferId) { ledger.settleExternalTransfer(it) }
+
+    override fun startInvestigation(investigation: Investigation) = change(investigation.transferId) {
+        ledger.startInvestigation(it, investigation.reason)
+    }
+
     override fun debitForExternalTransfer(debit: ExternalDebit): TransferOutcome {
         BankSpans.tag(BankSpans.DEBTOR_ACCOUNT_ID to debit.debtorAccountId)
         return change(debit.transferId) { ledger.debitForExternalTransfer(it, AccountId(debit.debtorAccountId), debit.amountCents) }
@@ -54,7 +67,7 @@ class LedgerActivitiesImpl(private val ledger: Ledger) : LedgerActivities {
     override fun completeExternalTransfer(transferId: UUID) = change(transferId) { ledger.completeExternalTransfer(it) }
 
     override fun refundExternalTransfer(refund: Refund) = change(refund.transferId) {
-        ledger.refundExternalTransfer(it, refund.reason ?: "Rejected by the external bank")
+        ledger.refundExternalTransfer(it, refund.reason ?: "Rejected")
     }
 
     override fun rejectTransfer(rejection: TransferRejection) = change(rejection.transferId) {

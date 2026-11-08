@@ -13,8 +13,8 @@ observability/otel-collector/  collector config for Temporal server and Postgres
 bank-service/
   ledger/        event repositories (postings, transfer history), Ledger (transactions, locks), queries
   workflow/      TransferWorkflow
-  activities/    LedgerActivities, RiskActivities, ExternalBankActivities
-  externalbank/  external bank simulator: slow, fails technically, sometimes rejects
+  activities/    LedgerActivities, RiskActivities, ClearingHouseActivities (pacs.008, pacs.028 over HTTP)
+  externalbank/  the simulated external bank from before SEPA Instant: only for executions started before #59
   api/           REST
   config/        Temporal data converter, OpenTelemetry log appender, which requests get traced
   observability/ span attributes, UI config, OTLP proxy for the browser
@@ -31,8 +31,9 @@ ID `transfer-<transferId>`):
    waits up to 3 days for the `approve` update. The ledger then records the decision: `APPROVED`, or `REJECTED` when
    denied or not decided in time.
 2. **Internal:** one activity, one database transaction: the status `BOOKED`, debit and credit. No saga needed.
-3. **External bank (saga):** debit, the money goes to the clearing account (`SENT_TO_EXTERNAL_BANK`) → external bank
-   → `COMPLETED`, or `REFUNDED` on rejection.
+3. **External (SEPA Instant through the clearing house):** reserve the amount on the clearing account (`RESERVED`),
+   send the `pacs.008` (`SENT_TO_EXTERNAL_BANK`), wait for the final status → `COMPLETED` (settled) or `REFUNDED`.
+   Without a final status: `UNDER_INVESTIGATION`, the amount stays reserved. Details below.
 
 Who decides what ([decision 0007](decisions/0007-workflow-runs-the-process-domain-decides-and-records.md)):
 
@@ -43,9 +44,10 @@ Who decides what ([decision 0007](decisions/0007-workflow-runs-the-process-domai
 | Workflow | when a step is attempted, waiting, deadlines, retries, compensation | Temporal |
 
 ```
-RECEIVED ─┬───────────────────────────────┬─→ BOOKED                      (internal, deposit)
-          └→ AWAITING_APPROVAL → APPROVED ┴─→ SENT_TO_EXTERNAL_BANK ─┬→ COMPLETED
-                                                                      └→ REFUNDED
+RECEIVED ─┬───────────────────────────────┬─→ BOOKED                                          (internal, deposit)
+          └→ AWAITING_APPROVAL → APPROVED ┴─→ RESERVED → SENT_TO_EXTERNAL_BANK ─┬→ COMPLETED   (external)
+                                                  │                │             └→ REFUNDED
+                                                  └────────────────┴─→ UNDER_INVESTIGATION ─→ COMPLETED or REFUNDED
 RECEIVED, AWAITING_APPROVAL, APPROVED ─→ REJECTED (nothing booked)
 ```
 
@@ -125,6 +127,80 @@ sequenceDiagram
     WF->>T: workflow completed
 ```
 
+### An external transfer: SEPA Instant
+
+The bank sends the payment to the clearing house and acts only on a **final status**. The UETR of the payment is the
+transfer ID, so every message about it finds the transfer (and its workflow) again.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    box rgb(232, 240, 254) Workflow: the process, in Temporal
+        participant WF as TransferWorkflow
+    end
+    box rgb(254, 243, 224) Activities: side effects with retries
+        participant LA as LedgerActivities
+        participant CA as ClearingHouseActivities
+    end
+    box rgb(230, 244, 234) Ledger: rules and business state
+        participant DB as Transfer decider<br/>and Postgres
+    end
+    participant CH as Clearing house
+    participant API as Inbound API<br/>/api/clearing/inbound
+
+    WF->>LA: reserveForExternalTransfer
+    LA->>DB: RESERVED: customer → clearing account
+    Note over WF: confirmation expected from now on<br/>(it may arrive before the next step returns)
+    WF->>CA: submit (retried until the 10-second deadline)
+    CA->>CH: POST pacs.008 (acceptance time, UETR = transfer ID)
+    CH-->>CA: 202 (409: an earlier attempt got through)
+    WF->>LA: markSentToExternalBank
+    LA->>DB: SENT_TO_EXTERNAL_BANK
+
+    alt confirmation within 20 seconds
+        CH->>API: POST pacs.002 ACSC or RJCT
+        API->>WF: update "confirm" (validator first)
+    else no confirmation
+        loop every 30 s, then under investigation every 10 min
+            WF->>CA: inquire
+            CA->>CH: POST pacs.028
+            CH-->>CA: pacs.002 ACSC, RJCT or PDNG, or 404 (unknown)
+        end
+        Note over WF,DB: after 5 minutes without a final status: UNDER_INVESTIGATION,<br/>the amount stays reserved. A late confirmation still ends the wait.
+    end
+
+    alt ACSC
+        WF->>LA: settleExternalTransfer
+        LA->>DB: COMPLETED: clearing account → settlement account
+    else RJCT
+        WF->>LA: refundExternalTransfer("Account closed (AC04)")
+        LA->>DB: REFUNDED: clearing account → customer
+    end
+```
+
+When is an answer final?
+
+| Answer | Final? | Then |
+| --- | --- | --- |
+| `pacs.002` ACSC (confirmation or inquiry) | yes | settle: the reserved amount goes to the settlement account |
+| `pacs.002` RJCT with a reason code | yes | refund, with the reason as text: "Account closed (AC04)" |
+| the clearing house refuses the `pacs.008` (4xx other than 409) | yes, it recorded nothing | refund at once |
+| unknown at the inquiry, and it never confirmed receipt | yes: the deadline has passed, it refuses the payment if it still arrives | refund |
+| unknown although it confirmed receipt, PDNG, not reachable | no | keep asking; after 5 minutes `UNDER_INVESTIGATION` |
+
+So no path releases or books the money without a definitive answer.
+
+The inbound endpoint (`POST /api/clearing/inbound/pacs002`) trusts whoever calls it, like every endpoint of the lab
+so far. Between real banks and their clearing house this connection is mutually authenticated (mTLS on a private
+network); here a forged ACSC could settle a payment. It belongs to the authentication work in #36. The clearing house counts its deadline from the
+payment's acceptance time (`acceptanceDateTime`, ISO 20022 AccptncDtTm) and refuses a `pacs.008` that reaches it
+later; that is what makes "unknown after the deadline" final.
+
+Transfers whose workflow reached its external part before #59 continue with the simulated external bank:
+`Workflow.getVersion("sepa-instant", …)` sends executions without the version marker down the old branch. The replay
+test replays the recorded histories of both versions (`v1-*`, `v2-*`). Once no old execution is open any more, the old
+branch and the simulator can go.
+
 ## Ledger
 
 - Every posting is an immutable row in `postings` (a trigger forbids UPDATE and DELETE). The balance is their sum.
@@ -138,8 +214,9 @@ sequenceDiagram
   the unique constraint `(transfer_id, account_id, leg)`.
 - `transfers.status` is the current business status; `transfer_events` keeps every change with its reason (append-only,
   like the postings). `GET /api/transfers/{id}/history` and the transfer drawer in the UI show it.
-- System accounts: cash (`…0001`) for deposits, clearing account for external banks (`…0002`), settlement account at
-  the clearing house (`…0003`). They may go negative and have no IBAN.
+- System accounts: cash (`…0001`) for deposits, clearing account for amounts reserved for external transfers
+  (`…0002`), settlement account (`…0003`), which mirrors the bank's account at the clearing house: a settled payment
+  moves from the clearing account to it. They may go negative and have no IBAN.
 - Every customer account has an IBAN of this bank: `DE`, check digits, the bank code from `bank.identity` and a
   10-digit account number from a sequence. The `Iban` value object in `domain` validates and builds it; its
   `toString()` masks it, so it doesn't end up in logs by accident.
@@ -161,14 +238,15 @@ mechanism (#55). It has its own Postgres schema and Temporal namespace (`clearin
 - **One workflow per payment** (`payment-<uetr>`):
   1. reserve the amount on the debtor bank's settlement account; without enough liquidity: rejected (`AM04`);
   2. forward the `pacs.008` to the creditor bank, routed by the bank code in the IBAN (unknown bank: `RC01`);
-  3. wait for its `pacs.002` (an update) until the deadline, 10 seconds;
+  3. wait for its `pacs.002` (an update) until the deadline: 10 seconds from the payment's acceptance at the debtor
+     bank. A `pacs.008` that arrives after it is refused (422) and not recorded;
   4. on acceptance settle (reserved → creditor bank), otherwise release the reservation (the creditor's reason code,
      or `AB05` without an answer in time);
   5. confirm the result to both banks.
 - **API** (`/api/clearing`): `pacs008` from debtor banks, `pacs002` answers from creditor banks, `pacs028` status
   inquiries, and for operations the payments, the settlement balances and chaos settings (delayed or lost forwards).
-- Banks receive messages at `POST /api/clearing/inbound/pacs008` and `…/pacs002`; the banks implement them in #59 and
-  #60.
+- Banks receive messages at `POST /api/clearing/inbound/pacs002` (the confirmations of their own payments, #59) and
+  `…/pacs008` (incoming payments, #60).
 
 ## Architecture rules
 

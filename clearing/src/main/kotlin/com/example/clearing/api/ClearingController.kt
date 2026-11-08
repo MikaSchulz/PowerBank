@@ -36,6 +36,8 @@ import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
+import java.time.Duration
+import java.time.Instant
 import java.util.UUID
 
 /**
@@ -51,9 +53,16 @@ class ClearingController(
     private val chaos: Chaos,
 ) {
 
-    /** From the debtor bank: a payment to clear. */
+    /**
+     * From the debtor bank: a payment to clear. The deadline runs from the payment's acceptance at the debtor bank;
+     * a payment that arrives after it is refused (422) and not recorded, so a late retry can't revive a payment the
+     * debtor bank already gave up on.
+     */
     @PostMapping("/pacs008")
     fun pacs008(@RequestBody pacs008: Pacs008): ResponseEntity<Void> {
+        val elapsed = Duration.between(pacs008.acceptanceDateTime, Instant.now()).coerceAtLeast(Duration.ZERO)
+        val remaining = properties.deadline - elapsed
+        if (remaining <= Duration.ZERO) throw PaymentTooLate()
         val debtorBank = requireNotNull(properties.participant(germanBankCode(pacs008.debtorIban))) {
             "The debtor's bank is not a participant"
         }.bankCode
@@ -67,7 +76,7 @@ class ClearingController(
                 .setWorkflowIdReusePolicy(WorkflowIdReusePolicy.WORKFLOW_ID_REUSE_POLICY_REJECT_DUPLICATE)
                 .build(),
         )
-        WorkflowClient.start(workflow::clear, ClearingRequest(pacs008, debtorBank, creditorBank, properties.deadline.toMillis()))
+        WorkflowClient.start(workflow::clear, ClearingRequest(pacs008, debtorBank, creditorBank, remaining.toMillis()))
         return ResponseEntity.accepted().build()
     }
 
@@ -105,6 +114,9 @@ class ClearingController(
     @ExceptionHandler(IllegalArgumentException::class)
     fun badRequest(e: IllegalArgumentException) = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, e.message)
 
+    @ExceptionHandler(PaymentTooLate::class)
+    fun tooLate() = ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_CONTENT, "The payment's deadline has passed")
+
     @ExceptionHandler(WorkflowExecutionAlreadyStarted::class)
     fun duplicate() = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "A payment with this UETR was already received")
 
@@ -116,6 +128,9 @@ class ClearingController(
         private const val MAX_LIMIT = 200
     }
 }
+
+/** The payment reached the clearing house after its deadline. */
+class PaymentTooLate : RuntimeException("The payment's deadline has passed")
 
 @Configuration(proxyBeanMethods = false)
 class ClearingStartup {

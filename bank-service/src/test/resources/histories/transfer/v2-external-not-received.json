@@ -1,0 +1,691 @@
+{
+  "events": [
+    {
+      "eventId": "1",
+      "eventTime": "2026-11-08T07:56:19.898Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_STARTED",
+      "workflowExecutionStartedEventAttributes": {
+        "workflowType": {
+          "name": "TransferWorkflow"
+        },
+        "taskQueue": {
+          "name": "bank"
+        },
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJ0cmFuc2ZlcklkIjoiZjQ3OWYxMjktZGRlYy00MzE0LWI1NWUtZjM1YmMyNDE1ZjMwIiwiZGVidG9yQWNjb3VudElkIjoiNWVjYzQxZTItMGQwNy00ZjU5LTgwY2MtODg3NjZlZDBjMmM4IiwiYW1vdW50Q2VudHMiOjUwMDAsImNyZWRpdG9yQWNjb3VudElkIjpudWxsLCJjcmVkaXRvckliYW4iOiJERTg5MzcwNDAwNDQwNTMyMDEzMDAwIn0\u003d"
+            }
+          ]
+        },
+        "workflowExecutionTimeout": "315360000s",
+        "workflowRunTimeout": "315360000s",
+        "workflowTaskTimeout": "10s",
+        "originalExecutionRunId": "028881ee-fde6-4b21-a1a9-7ca0914a20bb",
+        "identity": "4212@vm",
+        "firstExecutionRunId": "028881ee-fde6-4b21-a1a9-7ca0914a20bb",
+        "attempt": 1,
+        "firstWorkflowTaskBackoff": "0s",
+        "header": {}
+      }
+    },
+    {
+      "eventId": "2",
+      "eventTime": "2026-11-08T07:56:19.898Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "bank"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "3",
+      "eventTime": "2026-11-08T07:56:19.899Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "2",
+        "identity": "4212@vm",
+        "historySizeBytes": "425"
+      }
+    },
+    {
+      "eventId": "4",
+      "eventTime": "2026-11-08T07:56:19.907Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "2",
+        "identity": "4212@vm",
+        "sdkMetadata": {
+          "langUsedFlags": [
+            1,
+            3
+          ],
+          "sdkName": "temporal-java",
+          "sdkVersion": "1.40.0"
+        },
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "5",
+      "eventTime": "2026-11-08T07:56:19.907Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "88d063cb-1b6a-3c18-b9fb-e8843a22a912",
+        "activityType": {
+          "name": "RiskAssess"
+        },
+        "taskQueue": {
+          "name": "bank"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJ0cmFuc2ZlcklkIjoiZjQ3OWYxMjktZGRlYy00MzE0LWI1NWUtZjM1YmMyNDE1ZjMwIiwiZGVidG9yQWNjb3VudElkIjoiNWVjYzQxZTItMGQwNy00ZjU5LTgwY2MtODg3NjZlZDBjMmM4IiwiYW1vdW50Q2VudHMiOjUwMDAsImV4dGVybmFsIjp0cnVlfQ\u003d\u003d"
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "315360000s",
+        "scheduleToStartTimeout": "315360000s",
+        "startToCloseTimeout": "5s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "3",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2.0,
+          "maximumInterval": "100s"
+        }
+      }
+    },
+    {
+      "eventId": "6",
+      "eventTime": "2026-11-08T07:56:19.908Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "5",
+        "identity": "4212@vm",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "7",
+      "eventTime": "2026-11-08T07:56:19.911Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJyZXZpZXdSZXF1aXJlZCI6ZmFsc2UsInJlYXNvbiI6bnVsbH0\u003d"
+            }
+          ]
+        },
+        "scheduledEventId": "5",
+        "startedEventId": "6",
+        "identity": "4212@vm"
+      }
+    },
+    {
+      "eventId": "8",
+      "eventTime": "2026-11-08T07:56:19.911Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "bank"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "9",
+      "eventTime": "2026-11-08T07:56:19.912Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "8",
+        "identity": "4212@vm",
+        "historySizeBytes": "995"
+      }
+    },
+    {
+      "eventId": "10",
+      "eventTime": "2026-11-08T07:56:19.918Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "8",
+        "identity": "4212@vm",
+        "sdkMetadata": {
+          "langUsedFlags": [
+            2,
+            5
+          ],
+          "sdkName": "temporal-java",
+          "sdkVersion": "1.40.0"
+        },
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "11",
+      "eventTime": "2026-11-08T07:56:19.918Z",
+      "eventType": "EVENT_TYPE_MARKER_RECORDED",
+      "markerRecordedEventAttributes": {
+        "markerName": "Version",
+        "details": {
+          "changeId": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+                },
+                "data": "InNlcGEtaW5zdGFudCI\u003d"
+              }
+            ]
+          },
+          "version": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+                },
+                "data": "MQ\u003d\u003d"
+              }
+            ]
+          }
+        },
+        "workflowTaskCompletedEventId": "9"
+      }
+    },
+    {
+      "eventId": "12",
+      "eventTime": "2026-11-08T07:56:19.918Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "412dcad4-38a3-3e77-94c7-22db46023c54",
+        "activityType": {
+          "name": "LedgerReserveForExternalTransfer"
+        },
+        "taskQueue": {
+          "name": "bank"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJ0cmFuc2ZlcklkIjoiZjQ3OWYxMjktZGRlYy00MzE0LWI1NWUtZjM1YmMyNDE1ZjMwIiwiZGVidG9yQWNjb3VudElkIjoiNWVjYzQxZTItMGQwNy00ZjU5LTgwY2MtODg3NjZlZDBjMmM4IiwiYW1vdW50Q2VudHMiOjUwMDB9"
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "315360000s",
+        "scheduleToStartTimeout": "315360000s",
+        "startToCloseTimeout": "10s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "9",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2.0,
+          "maximumInterval": "30s"
+        }
+      }
+    },
+    {
+      "eventId": "13",
+      "eventTime": "2026-11-08T07:56:19.919Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "12",
+        "identity": "4212@vm",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "14",
+      "eventTime": "2026-11-08T07:56:19.924Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJzdGF0dXMiOiJSRVNFUlZFRCIsInJlYXNvbiI6bnVsbH0\u003d"
+            }
+          ]
+        },
+        "scheduledEventId": "12",
+        "startedEventId": "13",
+        "identity": "4212@vm"
+      }
+    },
+    {
+      "eventId": "15",
+      "eventTime": "2026-11-08T07:56:19.924Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "bank"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "16",
+      "eventTime": "2026-11-08T07:56:19.925Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "15",
+        "identity": "4212@vm",
+        "historySizeBytes": "1698"
+      }
+    },
+    {
+      "eventId": "17",
+      "eventTime": "2026-11-08T07:56:19.931Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "15",
+        "identity": "4212@vm",
+        "sdkMetadata": {
+          "sdkName": "temporal-java",
+          "sdkVersion": "1.40.0"
+        },
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "18",
+      "eventTime": "2026-11-08T07:56:19.931Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "5859313c-5a4d-3b82-b386-161f810d3cb5",
+        "activityType": {
+          "name": "ClearingHouseSubmit"
+        },
+        "taskQueue": {
+          "name": "bank"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJ0cmFuc2ZlcklkIjoiZjQ3OWYxMjktZGRlYy00MzE0LWI1NWUtZjM1YmMyNDE1ZjMwIiwiZGVidG9yQWNjb3VudElkIjoiNWVjYzQxZTItMGQwNy00ZjU5LTgwY2MtODg3NjZlZDBjMmM4IiwiY3JlZGl0b3JJYmFuIjoiREU4OTM3MDQwMDQ0MDUzMjAxMzAwMCIsImFtb3VudENlbnRzIjo1MDAwLCJhY2NlcHRlZEF0IjoiMjAyNi0xMS0wOFQwNzo1NjoxOS45MjVaIn0\u003d"
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "10s",
+        "scheduleToStartTimeout": "10s",
+        "startToCloseTimeout": "5s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "16",
+        "retryPolicy": {
+          "initialInterval": "0.500s",
+          "backoffCoefficient": 2.0,
+          "maximumInterval": "50s"
+        }
+      }
+    },
+    {
+      "eventId": "19",
+      "eventTime": "2026-11-08T07:56:27.454Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "18",
+        "identity": "4212@vm",
+        "attempt": 5
+      }
+    },
+    {
+      "eventId": "20",
+      "eventTime": "2026-11-08T07:56:27.458Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_FAILED",
+      "activityTaskFailedEventAttributes": {
+        "failure": {
+          "message": "clearing house unreachable",
+          "source": "JavaSDK",
+          "stackTrace": "com.example.bank.workflow.TransferWorkflowHistoryRecorder.record_histories$lambda$11$0(TransferWorkflowHistoryRecorder.kt:83)\ncom.example.bank.workflow.TransferWorkflowTest$FakeClearingHouse.submit(TransferWorkflowTest.kt:488)\njava.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)\njava.base/java.lang.reflect.Method.invoke(Method.java:580)\nio.temporal.internal.activity.RootActivityInboundCallsInterceptor$POJOActivityInboundCallsInterceptor.executeActivity(RootActivityInboundCallsInterceptor.java:44)\nio.temporal.internal.activity.RootActivityInboundCallsInterceptor.execute(RootActivityInboundCallsInterceptor.java:23)\nio.temporal.internal.activity.ActivityTaskExecutors$BaseActivityTaskExecutor.execute(ActivityTaskExecutors.java:88)\nio.temporal.internal.activity.ActivityTaskHandlerImpl.handle(ActivityTaskHandlerImpl.java:109)\nio.temporal.internal.worker.ActivityWorker$TaskHandlerImpl.handleActivity(ActivityWorker.java:393)\nio.temporal.internal.worker.ActivityWorker$TaskHandlerImpl.handle(ActivityWorker.java:334)\nio.temporal.internal.worker.ActivityWorker$TaskHandlerImpl.handle(ActivityWorker.java:296)\nio.temporal.internal.worker.PollTaskExecutor.lambda$process$1(PollTaskExecutor.java:80)\njava.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1144)\njava.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:642)\njava.base/java.lang.Thread.run(Thread.java:1583)\n",
+          "applicationFailureInfo": {
+            "type": "java.lang.IllegalStateException"
+          }
+        },
+        "scheduledEventId": "18",
+        "startedEventId": "19",
+        "identity": "4212@vm",
+        "retryState": "RETRY_STATE_TIMEOUT"
+      }
+    },
+    {
+      "eventId": "21",
+      "eventTime": "2026-11-08T07:56:27.458Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "bank"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "22",
+      "eventTime": "2026-11-08T07:56:27.458Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "21",
+        "identity": "4212@vm",
+        "historySizeBytes": "3825"
+      }
+    },
+    {
+      "eventId": "23",
+      "eventTime": "2026-11-08T07:56:27.468Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "21",
+        "identity": "4212@vm",
+        "sdkMetadata": {
+          "langUsedFlags": [
+            4
+          ],
+          "sdkName": "temporal-java",
+          "sdkVersion": "1.40.0"
+        },
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "24",
+      "eventTime": "2026-11-08T07:56:27.468Z",
+      "eventType": "EVENT_TYPE_TIMER_STARTED",
+      "timerStartedEventAttributes": {
+        "timerId": "416bd1e2-f001-38f2-96b3-85befa4a77b5",
+        "startToFireTimeout": "12.467s",
+        "workflowTaskCompletedEventId": "22"
+      }
+    },
+    {
+      "eventId": "25",
+      "eventTime": "2026-11-08T07:56:39.935Z",
+      "eventType": "EVENT_TYPE_TIMER_FIRED",
+      "timerFiredEventAttributes": {
+        "timerId": "416bd1e2-f001-38f2-96b3-85befa4a77b5",
+        "startedEventId": "24"
+      }
+    },
+    {
+      "eventId": "26",
+      "eventTime": "2026-11-08T07:56:39.935Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "bank"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "27",
+      "eventTime": "2026-11-08T07:56:39.939Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "26",
+        "identity": "4212@vm",
+        "historySizeBytes": "4086"
+      }
+    },
+    {
+      "eventId": "28",
+      "eventTime": "2026-11-08T07:56:39.943Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "26",
+        "identity": "4212@vm",
+        "sdkMetadata": {
+          "sdkName": "temporal-java",
+          "sdkVersion": "1.40.0"
+        },
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "29",
+      "eventTime": "2026-11-08T07:56:39.943Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "c8488e91-efb9-336e-890c-e975814886be",
+        "activityType": {
+          "name": "ClearingHouseInquire"
+        },
+        "taskQueue": {
+          "name": "bank"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "ImY0NzlmMTI5LWRkZWMtNDMxNC1iNTVlLWYzNWJjMjQxNWYzMCI\u003d"
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "60s",
+        "scheduleToStartTimeout": "60s",
+        "startToCloseTimeout": "5s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "27",
+        "retryPolicy": {
+          "initialInterval": "2s",
+          "backoffCoefficient": 2.0,
+          "maximumInterval": "20s"
+        }
+      }
+    },
+    {
+      "eventId": "30",
+      "eventTime": "2026-11-08T07:56:39.943Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "29",
+        "identity": "4212@vm",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "31",
+      "eventTime": "2026-11-08T07:56:39.947Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJzdGF0dXMiOm51bGx9"
+            }
+          ]
+        },
+        "scheduledEventId": "29",
+        "startedEventId": "30",
+        "identity": "4212@vm"
+      }
+    },
+    {
+      "eventId": "32",
+      "eventTime": "2026-11-08T07:56:39.947Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "bank"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "33",
+      "eventTime": "2026-11-08T07:56:39.948Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "32",
+        "identity": "4212@vm",
+        "historySizeBytes": "4521"
+      }
+    },
+    {
+      "eventId": "34",
+      "eventTime": "2026-11-08T07:56:39.955Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "32",
+        "identity": "4212@vm",
+        "sdkMetadata": {
+          "sdkName": "temporal-java",
+          "sdkVersion": "1.40.0"
+        },
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "35",
+      "eventTime": "2026-11-08T07:56:39.955Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "2dbf1a32-360d-3514-8b9e-8fd28efd9453",
+        "activityType": {
+          "name": "LedgerRefundExternalTransfer"
+        },
+        "taskQueue": {
+          "name": "bank"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJ0cmFuc2ZlcklkIjoiZjQ3OWYxMjktZGRlYy00MzE0LWI1NWUtZjM1YmMyNDE1ZjMwIiwicmVhc29uIjoiTm90IHJlY2VpdmVkIGJ5IHRoZSBjbGVhcmluZyBob3VzZSJ9"
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "315360000s",
+        "scheduleToStartTimeout": "315360000s",
+        "startToCloseTimeout": "10s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "33",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2.0,
+          "maximumInterval": "30s"
+        }
+      }
+    },
+    {
+      "eventId": "36",
+      "eventTime": "2026-11-08T07:56:39.955Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "35",
+        "identity": "4212@vm",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "37",
+      "eventTime": "2026-11-08T07:56:39.958Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJzdGF0dXMiOiJSRUZVTkRFRCIsInJlYXNvbiI6Ik5vdCByZWNlaXZlZCBieSB0aGUgY2xlYXJpbmcgaG91c2UifQ\u003d\u003d"
+            }
+          ]
+        },
+        "scheduledEventId": "35",
+        "startedEventId": "36",
+        "identity": "4212@vm"
+      }
+    },
+    {
+      "eventId": "38",
+      "eventTime": "2026-11-08T07:56:39.958Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "bank"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "39",
+      "eventTime": "2026-11-08T07:56:39.958Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "38",
+        "identity": "4212@vm",
+        "historySizeBytes": "5085"
+      }
+    },
+    {
+      "eventId": "40",
+      "eventTime": "2026-11-08T07:56:39.963Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "38",
+        "identity": "4212@vm",
+        "sdkMetadata": {
+          "sdkName": "temporal-java",
+          "sdkVersion": "1.40.0"
+        },
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "41",
+      "eventTime": "2026-11-08T07:56:39.963Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED",
+      "workflowExecutionCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg\u003d\u003d"
+              },
+              "data": "eyJ0cmFuc2ZlcklkIjoiZjQ3OWYxMjktZGRlYy00MzE0LWI1NWUtZjM1YmMyNDE1ZjMwIiwic3RhdHVzIjoiUkVGVU5ERUQiLCJhbW91bnRDZW50cyI6NTAwMCwiZXh0ZXJuYWwiOnRydWUsInJlYXNvbiI6Ik5vdCByZWNlaXZlZCBieSB0aGUgY2xlYXJpbmcgaG91c2UifQ\u003d\u003d"
+            }
+          ]
+        },
+        "workflowTaskCompletedEventId": "39"
+      }
+    }
+  ]
+}

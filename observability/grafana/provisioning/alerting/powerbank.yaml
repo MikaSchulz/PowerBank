@@ -46,8 +46,8 @@ groups:
           __dashboardUid__: powerbank-overview
           __panelId__: "2"
 
-      - uid: powerbank-external-bank-failing
-        title: External bank does not accept payments
+      - uid: powerbank-clearing-house-failing
+        title: Clearing house not reachable
         condition: C
         data:
           - refId: A
@@ -55,11 +55,11 @@ groups:
             datasourceUid: prometheus
             model:
               refId: A
-              # Share of calls that were rejected or failed technically, only with at least 5 calls in 5 minutes.
+              # Share of calls that failed technically, only with at least 5 calls in 5 minutes.
               expr: >-
-                (sum(increase(bank_external_bank_call_milliseconds_count{outcome!="accepted"}[5m]))
-                  / sum(increase(bank_external_bank_call_milliseconds_count[5m])))
-                and on() (sum(increase(bank_external_bank_call_milliseconds_count[5m])) >= 5)
+                (sum(increase(bank_clearing_call_milliseconds_count{outcome="failure"}[5m]))
+                  / sum(increase(bank_clearing_call_milliseconds_count[5m])))
+                and on() (sum(increase(bank_clearing_call_milliseconds_count[5m])) >= 5)
               instant: true
               range: false
           - refId: C
@@ -76,10 +76,10 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: More than half of the calls to the external bank were not accepted in the last 5 minutes.
+          summary: More than half of the calls to the clearing house failed in the last 5 minutes.
           description: >-
-            {{ humanizePercentage $values.A.Value }} of the calls were rejected or failed. Technical failures are retried
-            by Temporal; check the simulator settings in the UI.
+            {{ humanizePercentage $values.A.Value }} of the pacs.008 and pacs.028 calls failed. Temporal retries them;
+            payments without a final status go under investigation after 5 minutes. Is the clearing house running?
           __dashboardUid__: powerbank-overview
           __panelId__: "13"
 
@@ -160,7 +160,7 @@ groups:
             datasourceUid: prometheus
             model:
               refId: A
-              expr: max(bank_transfers_in_flight_age_max_seconds{status="SENT_TO_EXTERNAL_BANK"})
+              expr: max(bank_transfers_in_flight_age_max_seconds{status=~"RESERVED|SENT_TO_EXTERNAL_BANK"})
               instant: true
               range: false
           - refId: C
@@ -177,12 +177,45 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: An external transfer has been at the external bank for more than 15 minutes.
+          summary: An external transfer has been reserved or sent for more than 15 minutes.
           description: >-
-            The workflow refunds the debit after 10 minutes without an answer from the external bank, so after
+            The workflow puts a transfer under investigation after 5 minutes without a final status, so after
             {{ humanizeDuration $values.A.Value }} something is wrong: is the worker running?
           __dashboardUid__: powerbank-overview
           __panelId__: "4"
+
+      - uid: powerbank-transfer-under-investigation
+        title: External transfer under investigation
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: max(bank_transfers_in_flight{status="UNDER_INVESTIGATION"})
+              instant: true
+              range: false
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        labels:
+          severity: warning
+        annotations:
+          summary: External transfers have no final status from the clearing house.
+          description: >-
+            {{ $values.A.Value }} transfer(s) under investigation: their amount stays reserved until the clearing house
+            confirms or answers a status inquiry. The workflow keeps asking every 10 minutes; check the clearing house.
+          __dashboardUid__: powerbank-overview
+          __panelId__: "3"
 
       - uid: powerbank-transfer-stuck-before-booking
         title: Transfer stuck before booking
