@@ -1,0 +1,26 @@
+# Integration tests against the local stack, apart from the running clearing house: own schema, the namespace of the
+# integration tests, a short deadline. The participants' URLs point to fake banks (set by the test).
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/bank?currentSchema=clearing_it
+  flyway:
+    schemas: clearing_it
+  temporal:
+    namespace: integration-test
+
+management:
+  tracing:
+    export:
+      otlp:
+        enabled: false
+  logging:
+    export:
+      otlp:
+        enabled: false
+  otlp:
+    metrics:
+      export:
+        enabled: false
+
+clearing:
+  deadline: 3s
