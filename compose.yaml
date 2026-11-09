@@ -76,7 +76,7 @@ services:
   # Grafana with Tempo (traces), Loki (logs) and Prometheus (metrics) in one container.
   # The bank-service sends OTLP traces, metrics and logs to localhost:4318 (application.yml).
   lgtm:
-    image: grafana/otel-lgtm:0.39.0
+    image: grafana/otel-lgtm:0.40.0
     ports: ["3000:3000", "4317:4317", "4318:4318"]
     environment:
       PROMETHEUS_EXTRA_ARGS: --enable-feature=created-timestamp-zero-ingestion
