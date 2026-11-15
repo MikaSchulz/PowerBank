@@ -34,6 +34,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import java.time.Duration
 import java.util.UUID
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -147,14 +148,18 @@ class TransferWorkflowTest {
 
     @Test
     fun `a confirmation that arrives before the payment's submission has returned still counts`() {
+        val confirmed = CompletableFuture<Unit>()
         clearing.onSubmit = { payment ->
             // The clearing house is fast: its confirmation arrives while the bank still waits for the HTTP answer.
-            Thread { confirm(payment.transferId, TxSts.ACSC) }.start()
+            Thread { confirmed.completeWith { confirm(payment.transferId, TxSts.ACSC) } }.start()
             Thread.sleep(500)
             Submission(received = true)
         }
 
-        assertEquals(TransferStatus.COMPLETED, run(external(50_00)).status)
+        val (_, stub) = start(external(50_00))
+        // A refused confirmation must fail the test here: without it the workflow would ask forever (time skipping).
+        confirmed.get(10, TimeUnit.SECONDS)
+        assertEquals(TransferStatus.COMPLETED, stub.getResult(TransferState::class.java).status)
         assertEquals(listOf("reserve", "markSent", "settle"), ledger.calls)
     }
 

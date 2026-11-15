@@ -20,6 +20,7 @@ import com.example.bank.activities.TransferRejection
 import com.example.payments.messages.Pacs002
 import com.example.payments.messages.TxSts
 import java.util.UUID
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -117,6 +118,11 @@ class FakeLedger : LedgerActivities {
     }
 
     override fun completeExternalTransfer(transferId: UUID) = TransferOutcome(TransferStatus.COMPLETED).also { calls += "complete" }
+}
+
+/** Completes the future with the call's result, or with its failure, so another thread can wait for it. */
+fun <T> CompletableFuture<T>.completeWith(call: () -> T) {
+    runCatching(call).fold({ complete(it) }, { completeExceptionally(it) })
 }
 
 class FakeRisk : RiskActivities {
