@@ -15,10 +15,11 @@ bank-service/
   workflow/      TransferWorkflow, IncomingPaymentWorkflow, ClearingHouseWait (shared wait for a final status)
   activities/    LedgerActivities, RiskActivities, ClearingHouseActivities (pacs.008, pacs.028 over HTTP)
   externalbank/  the simulated external bank from before SEPA Instant: only for executions started before #59
-  api/           REST
+  api/           REST, by area (#61): customer/ (online banking), backoffice/, operations/; clearing inbound
   config/        Temporal data converter, OpenTelemetry log appender, which requests get traced
   observability/ span attributes, UI config, OTLP proxy for the browser
-  resources/static/  the UI (HTML, CSS, JS); telemetry.js and vendor/otel-web.js for browser telemetry
+  resources/static/  the UI: one page per area (customer, backoffice, operations) on shared ES modules (common.js);
+                 telemetry.js and vendor/otel-web.js for browser telemetry
   ui-telemetry/  build of the vendored OpenTelemetry bundle (npm + esbuild, not part of the Gradle build)
 ```
 
@@ -83,7 +84,7 @@ sequenceDiagram
     end
     actor E as Employee (UI)
 
-    C->>API: POST /api/transfers (above the approval limit)
+    C->>API: POST /api/customer/accounts/{id}/transfers (above the approval limit)
     API->>D: ReceiveTransfer
     D->>DB: status RECEIVED
     API->>T: start workflow transfer-{id}
@@ -103,7 +104,7 @@ sequenceDiagram
     end
 
     alt approved within 3 days
-        E->>API: POST /api/transfers/{id}/approval
+        E->>API: POST /api/backoffice/transfers/{id}/approval
         API->>T: update "approve"
         T->>WF: validator, then approve(decision)
         WF->>LA: decideApproval(approved)
@@ -278,7 +279,7 @@ sequenceDiagram
 - Idempotency: the first decision for a transfer ID stands, even across activity retries. On top of that there's
   the unique constraint `(transfer_id, account_id, leg)`.
 - `transfers.status` is the current business status; `transfer_events` keeps every change with its reason (append-only,
-  like the postings). `GET /api/transfers/{id}/history` and the transfer drawer in the UI show it.
+  like the postings). `GET /api/backoffice/transfers/{id}/history` and the transfer drawer in the UI show it.
 - System accounts: cash (`…0001`) for deposits, clearing account for amounts reserved for external transfers
   (`…0002`), settlement account (`…0003`), which mirrors the bank's account at the clearing house: a settled payment
   moves from the clearing account to it. They may go negative and have no IBAN.

@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PowerBank · Online banking</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%235b4cf0'/%3E%3Cpath d='M18 4 8 18h7l-2 10 11-15h-7z' fill='white'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="app.css">
+  <script type="module" src="customer.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="./">
+    <span class="logo" aria-hidden="true">
+      <svg viewBox="0 0 32 32"><path d="M18 4 8 18h7l-2 10 11-15h-7z"/></svg>
+    </span>
+    <span class="brand-text">
+      <strong id="bank-name">PowerBank</strong>
+      <small id="bank-bic">Temporal banking lab</small>
+    </span>
+  </a>
+  <nav class="area-nav" aria-label="Areas">
+    <a href="customer.html" data-area="customer">Online banking</a>
+    <a href="backoffice.html" data-area="backoffice">Back office</a>
+    <a href="operations.html" data-area="operations">Operations</a>
+  </nav>
+  <div class="topbar-right"><label class="acting-as" title="Stands in for the login (#36): which account's customer you are">
+      <span>Acting as</span>
+      <select id="acting-as"></select>
+    </label></div>
+</header>
+
+<main class="layout">
+  <div id="no-account" class="empty" hidden>
+    <strong>No account to act as yet</strong>
+    <span>Accounts are opened in the back office (until account opening, #13, comes to online banking).</span>
+    <a class="btn primary" href="backoffice.html">Open one in the back office</a>
+  </div>
+
+  <div id="banking" class="grid" hidden>
+    <section class="panel">
+      <div id="account"></div>
+      <div class="panel-sub"><h3>Bookings</h3></div>
+      <div id="postings"></div>
+    </section>
+
+    <div class="right-col">
+      <section class="panel">
+        <div class="panel-head"><h2>Send money</h2></div>
+        <form id="send-form" class="transfer-form" autocomplete="off">
+          <label class="field wide">
+            <span>To IBAN <em>this bank: booked at once · another bank: SEPA Instant</em></span>
+            <input name="iban" class="mono" list="known-ibans" placeholder="DE89 3704 0044 0532 0130 00" spellcheck="false">
+            <datalist id="known-ibans"></datalist>
+          </label>
+          <label class="field">
+            <span>Amount</span>
+            <span class="amount-input">
+              <input name="amount" inputmode="decimal" placeholder="0.00">
+              <span>€</span>
+            </span>
+          </label>
+          <label class="field">
+            <span>Transfer ID <em>idempotency key</em></span>
+            <span class="input-row">
+              <input name="transferId" class="mono" placeholder="generated if empty" spellcheck="false">
+              <button type="button" class="btn ghost small" id="new-id">New</button>
+            </span>
+          </label>
+          <div class="form-actions">
+            <button class="btn primary" type="submit">Send</button>
+          </div>
+        </form>
+
+        <div class="scenarios">
+          <div class="scenarios-head">
+            <h3>Scenarios</h3>
+            <span class="hint">One click each, from this account to the IBAN above.</span>
+          </div>
+          <div class="chips">
+            <button type="button" class="chip-btn" data-scenario="limit">Above approval limit</button>
+            <button type="button" class="chip-btn" data-scenario="insufficient">Insufficient funds</button>
+            <button type="button" class="chip-btn" data-scenario="rejected">Clearing house rejects</button>
+            <button type="button" class="chip-btn" data-scenario="duplicate">Duplicate submission</button>
+            <button type="button" class="chip-btn" data-scenario="burst">Concurrent burst ×10</button>
+          </div>
+          <p id="scenario-hint" class="scenario-hint"></p>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Transfers</h2>
+          <div class="filters" id="filters" role="tablist" aria-label="Filter transfers">
+            <button type="button" data-filter="all" class="active">All</button>
+            <button type="button" data-filter="flight">In flight</button>
+            <button type="button" data-filter="done">Done</button>
+            <button type="button" data-filter="failed">Failed</button>
+          </div>
+        </div>
+        <div id="transfers" class="feed"></div>
+      </section>
+    </div>
+  </div>
+</main>
+
+<div id="scrim" class="scrim" hidden></div>
+<aside id="drawer" class="drawer" aria-hidden="true" aria-label="Details">
+  <button class="icon-btn drawer-close" type="button" data-action="close-drawer" aria-label="Close">
+    <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
+  </button>
+  <div id="drawer-content"></div>
+</aside>
+
+<dialog id="rename-dialog">
+  <form method="dialog" class="dialog-form">
+    <h2>Name this account</h2>
+    <p class="hint">The name stays in your browser. The bank only knows pseudonymous IDs.</p>
+    <label class="field"><span>Nickname</span><input name="nickname" maxlength="40"></label>
+    <div class="dialog-actions">
+      <button class="btn ghost" value="cancel" formnovalidate>Cancel</button>
+      <button class="btn primary" value="save">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="toasts" class="toasts" aria-live="polite"></div>
+<noscript><p class="noscript">PowerBank needs JavaScript.</p></noscript>
+</body>
+</html>

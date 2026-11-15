@@ -1,9 +1,12 @@
 package com.example.bank.api
 
+import com.example.bank.config.BankIdentity
+import com.example.bank.domain.Iban
 import com.example.bank.domain.TransferId
 import com.example.bank.domain.transfer.TransferKind
 import com.example.bank.domain.transfer.TransferStatus
 import com.example.bank.ledger.Ledger
+import com.example.bank.ledger.LedgerQueries
 import com.example.bank.ledger.SystemAccounts
 import com.example.bank.ledger.TransferDetails
 import com.example.bank.ledger.TransferHistoryEntry
@@ -16,6 +19,7 @@ import com.example.bank.workflow.TransferRequest
 import com.example.bank.workflow.TransferState
 import com.example.bank.workflow.TransferWorkflow
 import com.example.bank.workflow.transferWorkflowId
+import com.example.payments.messages.germanBankCode
 import io.opentelemetry.api.trace.Span
 import io.temporal.api.enums.v1.WorkflowIdReusePolicy
 import io.temporal.client.WorkflowClient
@@ -51,6 +55,8 @@ class TransferService(
     private val client: WorkflowClient,
     private val ledger: Ledger,
     private val records: TransferRecords,
+    private val queries: LedgerQueries,
+    private val identity: BankIdentity,
 ) {
 
     /**
@@ -104,9 +110,24 @@ class TransferService(
     /** The business status from the ledger: also while the workflow waits, and long after Temporal forgot it. */
     fun status(transferId: UUID): TransferState? = records.find(TransferId(transferId))?.toState()
 
-    /** Newest transfers first. */
-    fun list(accountId: UUID?, limit: Int): List<TransferView> =
-        records.list(accountId, limit).map { record ->
+    /**
+     * A customer's transfer to an IBAN, the way online banking takes it: booked internally if the IBAN is one of this
+     * bank's, sent as a SEPA Instant payment through the clearing house otherwise.
+     */
+    fun send(debtorAccountId: UUID, creditorIban: Iban, amountCents: Long, transferId: UUID): String? {
+        val onUs = creditorIban.value.startsWith("DE") && germanBankCode(creditorIban.value) == identity.bankCode
+        val request = if (onUs) {
+            val creditor = queries.accountByIban(creditorIban) ?: throw IllegalArgumentException("No account with this IBAN at this bank")
+            TransferRequest(transferId, debtorAccountId, amountCents, creditorAccountId = creditor.id)
+        } else {
+            TransferRequest(transferId, debtorAccountId, amountCents, creditorIban = creditorIban.value)
+        }
+        return start(request)
+    }
+
+    /** Newest transfers first; optionally of one account, or in one status. */
+    fun list(accountId: UUID?, limit: Int, status: TransferStatus? = null): List<TransferView> =
+        records.list(accountId, limit, status).map { record ->
             TransferView(
                 transferId = record.id,
                 kind = record.details?.kind,
@@ -120,6 +141,10 @@ class TransferService(
                 traceId = record.details?.traceId,
             )
         }
+
+    /** Whether the account is the transfer's debtor or creditor: what a customer may see of it. */
+    fun involves(transferId: UUID, accountId: UUID): Boolean =
+        records.find(TransferId(transferId))?.details?.let { it.debtorAccountId == accountId || it.creditorAccountId == accountId } == true
 
     /** The business history: every status the transfer went through, oldest first. */
     fun history(transferId: UUID): List<TransferHistoryEntry> = records.history(TransferId(transferId))

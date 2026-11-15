@@ -14,7 +14,7 @@ The first build takes a few minutes (Gradle downloads its dependencies inside Do
 
 | What runs | Where |
 | --- | --- |
-| UI and API | http://localhost:8080 |
+| UI (online banking, back office, operations) and API | http://localhost:8080 |
 | Grafana: dashboards *PowerBank overview* and *PowerBank infrastructure*, traces, logs, alerts | http://localhost:3000 |
 | Temporal UI | http://localhost:8233 |
 | `traffic`: the demo generator ([`showcase/traffic.py`](../showcase/traffic.py)) | `docker compose logs -f traffic` |
@@ -29,7 +29,7 @@ Don't run it next to `./gradlew :bank-service:bootRun`: both use port 8080.
 
 ## What the demo traffic does
 
-About one action every second or two, through the same REST API the UI uses:
+About one action every second or two, through the same REST API the UI's areas use:
 
 - **Accounts:** opens six accounts with deposits.
 - **Everyday traffic:** internal transfers and deposits. No transfers to other banks yet: they need bank B next to the
@@ -41,7 +41,7 @@ The accounts have no names: the bank only knows pseudonymous IDs (see [decision 
 
 ## A tour in ten minutes
 
-1. **The UI** (http://localhost:8080): transfers keep coming in. The generated accounts show up with their IDs, because nicknames only live in your browser. Open two accounts of your own with *New account* (give them nicknames), deposit something and send a transfer between them.
+1. **The UI** (http://localhost:8080): in the *back office*, transfers keep coming in. The generated accounts show up with their IDs, because nicknames only live in your browser. Open two accounts of your own with *Open account* (give them nicknames and a cash deposit), then go to *online banking*, act as one of them and send money to the other's IBAN.
 2. **One transfer from the click to the SQL:** open your transfer in the drawer and follow *Trace in Grafana*. You see the click in the browser (`bank-ui`), the REST call, the workflow with its activities, the row lock and the SQL statements, all in one trace.
    The transfers of the generator have the same trace, only without the browser part. An external transfer you send
    in the UI shows the reservation, the `pacs.008` to the clearing house (`bank.clearing.call`) and, in the same
@@ -56,7 +56,7 @@ The accounts have no names: the bank only knows pseudonymous IDs (see [decision 
    final status the transfers go *Under investigation* and "External transfer under investigation" fires. Start it
    again (`docker compose start clearing`): at the next status inquiry (every 10 minutes) the bank learns the clearing
    house never got the payments and refunds them.
-5. **Approvals in Temporal** (http://localhost:8233): a `TransferWorkflow` waiting for an approval shows the workflow, its `status` query and, once decided, the `approve` update in its history. In the UI you can approve or deny it yourself before the generator does.
+5. **Approvals in Temporal** (http://localhost:8233): a `TransferWorkflow` waiting for an approval shows the workflow, its `status` query and, once decided, the `approve` update in its history. In the back office you can approve or deny it yourself before the generator does.
 6. **Break something** and watch the system cope:
    - `docker compose stop temporal`: no transfer can start; after about two minutes "Temporal server down" fires. `docker compose start temporal`: everything continues where it stopped, because the workflows are on a volume.
    - `docker compose stop postgres`: bookings fail, Temporal retries the activities, and "Postgres unreachable" fires after about a minute. Start it again and the waiting transfers are booked.

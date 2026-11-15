@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PowerBank · Operations</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%235b4cf0'/%3E%3Cpath d='M18 4 8 18h7l-2 10 11-15h-7z' fill='white'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="app.css">
+  <script type="module" src="operations.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="./">
+    <span class="logo" aria-hidden="true">
+      <svg viewBox="0 0 32 32"><path d="M18 4 8 18h7l-2 10 11-15h-7z"/></svg>
+    </span>
+    <span class="brand-text">
+      <strong id="bank-name">PowerBank</strong>
+      <small id="bank-bic">Temporal banking lab</small>
+    </span>
+  </a>
+  <nav class="area-nav" aria-label="Areas">
+    <a href="customer.html" data-area="customer">Online banking</a>
+    <a href="backoffice.html" data-area="backoffice">Back office</a>
+    <a href="operations.html" data-area="operations">Operations</a>
+  </nav>
+  <div class="topbar-right"><div id="ledger-health" class="health" title="Double-entry check: all postings must sum up to zero"></div></div>
+</header>
+
+<main class="layout">
+  <div class="ops-grid">
+    <section class="panel">
+      <div class="panel-head"><h2>Ledger</h2></div>
+      <div id="ledger" class="stats"></div>
+      <p class="hint">Double-entry bookkeeping: every transfer's postings sum up to zero, so all of them do. The database
+        refuses an unbalanced transfer; the alert "Ledger unbalanced" watches the same sum.</p>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2>Bank accounts</h2></div>
+      <div id="system-accounts" class="system-list"></div>
+      <p class="hint">The bank's own accounts may go negative: the cash desk brings money in, clearing holds it on its way
+        to other banks, settlement mirrors the bank's account at the clearing house.</p>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2>Clearing house</h2></div>
+      <form id="chaos-form" class="chaos-form" autocomplete="off">
+        <div class="presets">
+          <button type="button" class="chip-btn" data-preset="normal">Normal</button>
+          <button type="button" class="chip-btn" data-preset="slow">Creditor bank too slow</button>
+          <button type="button" class="chip-btn" data-preset="lossy">Half the forwards lost</button>
+        </div>
+        <label class="field"><span>Forward delay <em>ms, up to 30 000</em></span><input name="forwardDelayMs" type="number" min="0" max="30000" step="500"></label>
+        <label class="field"><span>Lost forwards <em>share, 0 to 1</em></span><input name="dropForwardRate" type="number" min="0" max="1" step="0.05"></label>
+        <div class="form-actions"><button class="btn primary" type="submit">Apply</button></div>
+      </form>
+      <p class="hint">Chaos at the clearing house, for demos: a forward that is late or lost misses the 10-second
+        deadline, so the payment is rejected with AB05 and both banks learn it.</p>
+      <div class="panel-sub"><h3>Settlement accounts at the clearing house</h3></div>
+      <div id="clearing-balances"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2>Observability</h2></div>
+      <div id="links" class="link-list"></div>
+    </section>
+  </div>
+</main>
+
+<div id="scrim" class="scrim" hidden></div>
+<aside id="drawer" class="drawer" aria-hidden="true" aria-label="Details">
+  <button class="icon-btn drawer-close" type="button" data-action="close-drawer" aria-label="Close">
+    <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
+  </button>
+  <div id="drawer-content"></div>
+</aside>
+
+<div id="toasts" class="toasts" aria-live="polite"></div>
+<noscript><p class="noscript">PowerBank needs JavaScript.</p></noscript>
+</body>
+</html>

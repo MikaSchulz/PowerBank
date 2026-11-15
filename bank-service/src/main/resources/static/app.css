@@ -92,7 +92,8 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
   backdrop-filter: saturate(160%) blur(14px);
   border-bottom: 1px solid var(--border);
 }
-.brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.brand { display: flex; align-items: center; gap: 12px; min-width: 0; color: inherit; }
+a.brand:hover { text-decoration: none; }
 .logo {
   display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px;
   background: linear-gradient(135deg, var(--accent), #b04cf0);
@@ -103,6 +104,34 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .brand-text strong { font-size: 17px; letter-spacing: -.02em; }
 .brand-text small { color: var(--muted); font-size: 12px; }
 .topbar-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+
+/* The areas (#61): one page each, the same top bar. */
+.area-nav { display: inline-flex; padding: 3px; border-radius: 11px; background: var(--surface-2); border: 1px solid var(--border); gap: 2px; }
+.area-nav a {
+  height: 30px; display: inline-flex; align-items: center; padding: 0 12px; border-radius: 8px;
+  color: var(--muted); font-size: 13px; font-weight: 600; text-decoration: none;
+}
+.area-nav a:hover { color: var(--text); text-decoration: none; }
+.area-nav a.active { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgba(0, 0, 0, .12); }
+.acting-as { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); font-weight: 600; }
+.acting-as select { width: auto; min-width: 220px; height: 34px; }
+
+.landing h1 { font-size: 26px; letter-spacing: -.02em; margin-top: 12px; }
+.lead { color: var(--muted); max-width: 720px; margin: 8px 0 24px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+.tile {
+  display: grid; gap: 8px; align-content: start; padding: 20px; border-radius: var(--radius);
+  background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow); color: inherit;
+  transition: border-color .15s, transform .15s;
+}
+.tile:hover { text-decoration: none; border-color: var(--accent); transform: translateY(-2px); }
+.tile strong { font-size: 17px; }
+.tile span:last-child { color: var(--muted); font-size: 14px; }
+.tile-icon { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 12px; }
+.tile-icon svg { width: 22px; height: 22px; }
+.tile-icon.customer { background: var(--accent-soft); color: var(--accent); }
+.tile-icon.backoffice { background: var(--warn-soft); color: var(--warn); }
+.tile-icon.operations { background: var(--info-soft); color: var(--info); }
 
 .health {
   display: inline-flex; align-items: center; gap: 8px;
@@ -156,20 +185,36 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
 .panel-sub { margin: 22px 0 10px; }
 
-/* ---------- approvals banner ---------- */
+/* ---------- work queues (back office) ---------- */
 
-.approvals {
+.queue {
   margin-bottom: 20px; padding: 14px 16px; border-radius: var(--radius);
   background: var(--warn-soft); border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent);
 }
-.approvals-head { display: flex; align-items: center; gap: 10px; color: var(--warn); font-weight: 650; margin-bottom: 10px; }
-.approval-row {
+.queue.investigations { background: var(--info-soft); border-color: color-mix(in srgb, var(--info) 35%, transparent); }
+.queue-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; color: var(--warn); font-weight: 650; margin-bottom: 10px; }
+.investigations .queue-head { color: var(--info); }
+.queue-head .hint { margin: 0; font-weight: 450; }
+.queue-row {
   display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 12px;
   padding: 10px 12px; border-radius: var(--radius-sm); background: var(--surface); border: 1px solid var(--border);
 }
-.approval-row + .approval-row { margin-top: 8px; }
-.approval-row .tx-title { cursor: pointer; }
-.approval-actions { display: flex; gap: 6px; }
+.queue-row + .queue-row { margin-top: 8px; }
+.queue-row .tx-title { cursor: pointer; }
+.queue-actions { display: flex; gap: 6px; }
+
+/* ---------- operations ---------- */
+
+.ops-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 20px; align-items: start; }
+.stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.stat { display: grid; gap: 2px; padding: 12px; border-radius: var(--radius-sm); background: var(--surface-2); }
+.stat strong { font-size: 20px; font-variant-numeric: tabular-nums; }
+.stat span { color: var(--muted); font-size: 13px; }
+.stat.ok strong { color: var(--ok); }
+.stat.bad strong { color: var(--bad); }
+.chaos-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 14px; }
+.chaos-form .presets { grid-column: 1 / -1; display: flex; gap: 6px; flex-wrap: wrap; }
+.link-list { display: flex; flex-wrap: wrap; gap: 8px; }
 
 /* ---------- accounts ---------- */
 
@@ -193,6 +238,7 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .ac-name .mono { font-size: 12px; color: var(--faint); }
 .ac-balance { font-size: 26px; font-weight: 680; letter-spacing: -.02em; margin: 12px 0 2px; font-variant-numeric: tabular-nums; }
 .ac-balance.negative { color: var(--bad); }
+.ac-balance.big { font-size: 34px; }
 .ac-meta { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
 .meter { height: 6px; border-radius: 999px; background: var(--surface-3); margin-top: 10px; overflow: hidden; }
 .meter span { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width .4s; }
@@ -390,6 +436,8 @@ dialog::backdrop { background: rgba(8, 10, 18, .45); backdrop-filter: blur(2px);
 
 @media (max-width: 980px) {
   .grid { grid-template-columns: minmax(0, 1fr); }
+  .topbar { flex-wrap: wrap; }
+  .area-nav { order: 3; }
 }
 
 @media (max-width: 640px) {
@@ -400,7 +448,12 @@ dialog::backdrop { background: rgba(8, 10, 18, .45); backdrop-filter: blur(2px);
   .layout { padding: 16px; }
   .panel { padding: 14px; }
   .transfer-form { grid-template-columns: minmax(0, 1fr); }
-  .approval-row { grid-template-columns: minmax(0, 1fr); }
+  .queue-row { grid-template-columns: minmax(0, 1fr); }
+  .ops-grid { grid-template-columns: minmax(0, 1fr); }
+  .chaos-form { grid-template-columns: minmax(0, 1fr); }
+  .area-nav { width: 100%; justify-content: space-between; }
+  .acting-as > span { display: none; }
+  .acting-as select { min-width: 0; max-width: 60vw; }
   .health .extra { display: none; }
 }
 

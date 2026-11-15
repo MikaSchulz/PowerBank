@@ -99,7 +99,7 @@ class IncomingPaymentApiTest @Autowired constructor(
     @Test
     fun `a payment to a blocked account is rejected with AC06`() {
         val (account, iban) = openAccount()
-        mvc.post("/api/accounts/$account/block").andExpect { status { isOk() } }
+        mvc.post("/api/backoffice/accounts/$account/block").andExpect { status { isOk() } }
         val uetr = UUID.randomUUID()
 
         receive(uetr, iban, 10_00)
@@ -128,7 +128,7 @@ class IncomingPaymentApiTest @Autowired constructor(
     // --- helpers ---
 
     private fun openAccount(): Pair<UUID, String> {
-        val json = mvc.post("/api/accounts") {
+        val json = mvc.post("/api/backoffice/accounts") {
             contentType = MediaType.APPLICATION_JSON
             content = "{}"
         }.andExpect { status { isCreated() } }.andReturn().response.contentAsString

@@ -13,6 +13,7 @@ let otel = null;
 let tracer = null;
 let logger = null;
 let actions = null;
+let uiArea = 'unknown';
 
 const randomHex = (bytes) => [...crypto.getRandomValues(new Uint8Array(bytes))].map((b) => b.toString(16).padStart(2, '0')).join('');
 
@@ -23,7 +24,9 @@ function plainTraceparent(sampled) {
   return `00-${traceId}-${randomHex(8)}-${sampled ? '01' : '00'}`;
 }
 
-export async function initTelemetry({ enabled = true, endpoint = '/api/otel/v1', serviceVersion = 'dev' } = {}) {
+/** `area`: which part of the UI this page is (customer, backoffice, operations); on every span, log and metric. */
+export async function initTelemetry({ enabled = true, endpoint = '/api/otel/v1', serviceVersion = 'dev', area = 'unknown' } = {}) {
+  uiArea = area;
   if (!enabled) return false;
   try {
     otel = await import('./vendor/otel-web.js');
@@ -32,6 +35,7 @@ export async function initTelemetry({ enabled = true, endpoint = '/api/otel/v1',
       'service.name': 'bank-ui',
       'service.version': serviceVersion,
       'service.instance.id': crypto.randomUUID(),
+      'bank.ui.area': area,
     });
 
     const tracerProvider = new otel.TracerProvider({
@@ -102,13 +106,13 @@ export async function action(name, attributes, fn) {
   const span = tracer.startSpan(name, { kind: otel.SpanKind.INTERNAL, attributes }, otel.ROOT_CONTEXT);
   try {
     const result = await fn(span);
-    actions.add(1, { action: name, outcome: 'ok' });
+    actions.add(1, { action: name, area: uiArea, outcome: 'ok' });
     return result;
   } catch (error) {
     span.recordException(error);
     span.setStatus({ code: otel.SpanStatusCode.ERROR, message: String(error?.message ?? error) });
     recordError(error, span);
-    actions.add(1, { action: name, outcome: 'error' });
+    actions.add(1, { action: name, area: uiArea, outcome: 'error' });
     throw error;
   } finally {
     span.end();

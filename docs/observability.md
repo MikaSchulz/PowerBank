@@ -11,7 +11,7 @@ one trace per user action, from the click in the browser through Temporal into t
 ```
 send transfer                                        ← bank-ui: the click
 └─ HTTP POST                                         ← bank-ui: the fetch call
-   └─ http post /api/transfers                       ← bank-service from here on
+   └─ http post /api/customer/accounts/{id}/transfers   ← bank-service from here on
       ├─ query  INSERT INTO transfers …
       └─ StartWorkflow:TransferWorkflow
          └─ RunWorkflow:TransferWorkflow
@@ -38,8 +38,8 @@ one trace ID from the click in the browser down to the SQL.
 - Spring Boot continues an incoming `traceparent`; without one it starts a new trace.
 - Temporal carries the context in the workflow header `_tracer-data` as a W3C `traceparent`, so the workflow and all
   its activities continue the same trace, also after a worker restart.
-- The trace ID is stored with the transfer (`transfers.trace_id`), returned by `POST /api/transfers` and listed by
-  `GET /api/transfers`. The transfer drawer in the UI links straight to the trace in Grafana.
+- The trace ID is stored with the transfer (`transfers.trace_id`), returned when the transfer is accepted and listed
+  with the transfers. The transfer drawer in the UI links straight to the trace in Grafana.
 - Only `/api/` requests are traced; the UI's static files, actuator calls and the browser telemetry proxy
   (`/api/otel/`) are skipped (`ObservabilityConfig`).
 - `TracePropagationTest` proves all of this with an in-memory span exporter.
@@ -76,12 +76,14 @@ itself (other port, CORS), and in the cloud the proxy is where a login will be r
 
 | What | Where |
 | --- | --- |
-| user actions (`send transfer`, `approve transfer`, `scenario: burst`, …) with their API calls (`HTTP POST`) | Tempo: `{ resource.service.name = "bank-ui" }` |
+| user actions (`send transfer`, `approve transfer`, `scenario: burst`, …) with their API calls (`HTTP POST`) | Tempo: `{ resource.service.name = "bank-ui" }`, one area: `{ resource.bank.ui.area = "backoffice" }` |
 | page load (`documentLoad`, `documentFetch`, `resourceFetch`) | Tempo |
-| `ui_actions_total{action, outcome}` | Prometheus |
+| `ui_actions_total{action, area, outcome}` | Prometheus |
 | web vitals: `browser_web_vitals_{lcp,inp,fcp,ttfb}_milliseconds_*`, `browser_web_vitals_cls_*`, each with `rating` | Prometheus (sent every 10 s and when the tab is hidden) |
 | uncaught errors and failed actions, with stack trace, linked to the action's trace | Loki: `{service_name="bank-ui"}` |
 
+- Every page of the UI is one area (#61): `customer`, `backoffice`, `operations` (`home` for the start page), as the
+  resource attribute `bank.ui.area` and on every action span and the `ui_actions` metric.
 - The scenarios are one trace each: *Concurrent burst ×10* shows the ten parallel requests under one root span.
 - If the bundle can't be loaded or `bank.ui.browser-telemetry` is `false`, the UI keeps working and only sends a
   plain `traceparent` header.
