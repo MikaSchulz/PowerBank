@@ -33,6 +33,9 @@ class FakeClearingHouse(port: Int) : AutoCloseable {
     /** The bank's answers to incoming payments (ACCP or RJCT). */
     val answers = CopyOnWriteArrayList<Pacs002>()
 
+    /** Its chaos settings, as operations set them through the bank. */
+    @Volatile var chaos: Map<String, Any?> = mapOf("forwardDelayMs" to 0, "dropForwardRate" to 0.0)
+
     private val json = JsonMapper.builder().addModule(kotlinModule()).build()
     private val server = HttpServer.create(InetSocketAddress("localhost", port), 0).apply {
         createContext("/api/clearing/pacs008") { exchange ->
@@ -44,6 +47,18 @@ class FakeClearingHouse(port: Int) : AutoCloseable {
             val answer = json.readValue<Pacs002>(exchange.requestBody)
             answers += answer
             respond(exchange, onPacs002(answer), null)
+        }
+        createContext("/api/clearing/chaos") { exchange ->
+            if (exchange.requestMethod == "PUT") {
+                val settings = json.readValue<Map<String, Any?>>(exchange.requestBody)
+                val rate = (settings["dropForwardRate"] as Number).toDouble()
+                if (rate !in 0.0..1.0) {
+                    respond(exchange, BAD_REQUEST, mapOf("status" to BAD_REQUEST, "detail" to "dropForwardRate must be between 0 and 1"))
+                    return@createContext
+                }
+                chaos = settings
+            }
+            respond(exchange, OK, chaos)
         }
         createContext("/api/clearing/pacs028") { exchange ->
             val inquiry = json.readValue<Pacs028>(exchange.requestBody)
@@ -61,6 +76,7 @@ class FakeClearingHouse(port: Int) : AutoCloseable {
         payments.clear()
         inquiries.clear()
         answers.clear()
+        chaos = mapOf("forwardDelayMs" to 0, "dropForwardRate" to 0.0)
     }
 
     private fun respond(exchange: HttpExchange, status: Int, body: Any?) {
@@ -80,6 +96,7 @@ class FakeClearingHouse(port: Int) : AutoCloseable {
 
     private companion object {
         const val OK = 200
+        const val BAD_REQUEST = 400
         const val ACCEPTED = 202
         const val NOT_FOUND = 404
     }

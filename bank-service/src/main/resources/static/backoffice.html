@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PowerBank · Back office</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%235b4cf0'/%3E%3Cpath d='M18 4 8 18h7l-2 10 11-15h-7z' fill='white'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="app.css">
+  <script type="module" src="backoffice.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="./">
+    <span class="logo" aria-hidden="true">
+      <svg viewBox="0 0 32 32"><path d="M18 4 8 18h7l-2 10 11-15h-7z"/></svg>
+    </span>
+    <span class="brand-text">
+      <strong id="bank-name">PowerBank</strong>
+      <small id="bank-bic">Temporal banking lab</small>
+    </span>
+  </a>
+  <nav class="area-nav" aria-label="Areas">
+    <a href="customer.html" data-area="customer">Online banking</a>
+    <a href="backoffice.html" data-area="backoffice">Back office</a>
+    <a href="operations.html" data-area="operations">Operations</a>
+  </nav>
+  <div class="topbar-right"></div>
+</header>
+
+<main class="layout">
+  <section id="approvals" class="queue approvals" hidden></section>
+  <section id="investigations" class="queue investigations" hidden></section>
+
+  <div class="grid">
+    <section class="panel accounts-panel">
+      <div class="panel-head">
+        <h2>Customer accounts</h2>
+        <button id="new-account" class="btn primary small" type="button">Open account</button>
+      </div>
+      <div id="accounts" class="account-list"></div>
+    </section>
+
+    <div class="right-col">
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Transfers</h2>
+          <div class="filters" id="filters" role="tablist" aria-label="Filter transfers">
+            <button type="button" data-filter="all" class="active">All</button>
+            <button type="button" data-filter="flight">In flight</button>
+            <button type="button" data-filter="approval">Approval</button>
+            <button type="button" data-filter="done">Done</button>
+            <button type="button" data-filter="failed">Failed</button>
+          </div>
+        </div>
+        <div id="account-filter" class="account-filter" hidden></div>
+        <div id="transfers" class="feed"></div>
+      </section>
+    </div>
+  </div>
+</main>
+
+<div id="scrim" class="scrim" hidden></div>
+<aside id="drawer" class="drawer" aria-hidden="true" aria-label="Details">
+  <button class="icon-btn drawer-close" type="button" data-action="close-drawer" aria-label="Close">
+    <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
+  </button>
+  <div id="drawer-content"></div>
+</aside>
+
+<dialog id="account-dialog">
+  <form method="dialog" class="dialog-form">
+    <h2>Open account</h2>
+    <p class="hint">Right away, for a placeholder customer, until account opening with approval (#13). Names stay in your browser: the bank only knows pseudonymous IDs.</p>
+    <label class="field"><span>Nickname</span><input name="nickname" placeholder="e.g. Alice" maxlength="40"></label>
+    <label class="field"><span>Overdraft limit</span><span class="amount-input"><input name="overdraft" inputmode="decimal" placeholder="0.00"><span>€</span></span></label>
+    <label class="field"><span>Cash deposit</span><span class="amount-input"><input name="deposit" inputmode="decimal" placeholder="0.00"><span>€</span></span></label>
+    <div class="dialog-actions">
+      <button class="btn ghost" value="cancel" formnovalidate>Cancel</button>
+      <button class="btn primary" value="create">Open account</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="deposit-dialog">
+  <form method="dialog" class="dialog-form">
+    <h2>Cash deposit</h2>
+    <p class="hint">Cash at the counter: an internal transfer from the cash desk, so it runs through the same workflow.</p>
+    <label class="field"><span>Amount</span><span class="amount-input"><input name="amount" inputmode="decimal" placeholder="0.00"><span>€</span></span></label>
+    <div class="dialog-actions">
+      <button class="btn ghost" value="cancel" formnovalidate>Cancel</button>
+      <button class="btn primary" value="deposit">Deposit</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="rename-dialog">
+  <form method="dialog" class="dialog-form">
+    <h2>Name the account</h2>
+    <label class="field"><span>Nickname</span><input name="nickname" maxlength="40"></label>
+    <div class="dialog-actions">
+      <button class="btn ghost" value="cancel" formnovalidate>Cancel</button>
+      <button class="btn primary" value="save">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="deny-dialog">
+  <form method="dialog" class="dialog-form">
+    <h2>Deny transfer</h2>
+    <p class="hint">Sends the <code>approve</code> update with <code>approved: false</code>. The workflow rejects the transfer and books nothing.</p>
+    <label class="field"><span>Comment <em>optional</em></span><input name="comment" placeholder="e.g. customer reports fraud" maxlength="120"></label>
+    <div class="dialog-actions">
+      <button class="btn ghost" value="cancel" formnovalidate>Cancel</button>
+      <button class="btn danger" value="deny">Deny transfer</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="toasts" class="toasts" aria-live="polite"></div>
+<noscript><p class="noscript">PowerBank needs JavaScript.</p></noscript>
+</body>
+</html>

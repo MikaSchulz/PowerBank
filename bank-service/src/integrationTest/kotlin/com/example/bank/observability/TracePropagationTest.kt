@@ -40,7 +40,9 @@ class TracePropagationTest @Autowired constructor(
         val traceId = newTraceId()
 
         val transferId = postTransfer(
-            """{"debtorAccountId":"$alice","creditorAccountId":"$bob","amountCents":1000}""",
+            alice,
+            ibanOf(bob),
+            1000,
             traceparent = "00-$traceId-00f067aa0ba902b7-01",
             expectedTraceId = traceId,
         )
@@ -59,7 +61,7 @@ class TracePropagationTest @Autowired constructor(
         assertTrue("query" in names, "JDBC spans missing: $names")
 
         // The trace ID is stored with the transfer, so the UI can link to it.
-        val listed = mvc.get("/api/transfers?accountId=$bob").andReturn().response.contentAsString
+        val listed = mvc.get("/api/backoffice/transfers?accountId=$bob").andReturn().response.contentAsString
         assertEquals(traceId, JsonPath.read<String>(listed, "$[0].traceId"))
     }
 
@@ -68,7 +70,9 @@ class TracePropagationTest @Autowired constructor(
         val (alice, bob) = fundedAccounts()
         val traceId = newTraceId()
         val transferId = postTransfer(
-            """{"debtorAccountId":"$alice","creditorAccountId":"$bob","amountCents":500}""",
+            alice,
+            ibanOf(bob),
+            500,
             traceparent = "00-$traceId-00f067aa0ba902b7-01",
             expectedTraceId = traceId,
         )
@@ -87,9 +91,9 @@ class TracePropagationTest @Autowired constructor(
     fun `without traceparent a new trace is started and returned`() {
         val (alice, bob) = fundedAccounts()
 
-        val json = mvc.post("/api/transfers") {
+        val json = mvc.post("/api/customer/accounts/$alice/transfers") {
             contentType = MediaType.APPLICATION_JSON
-            content = """{"debtorAccountId":"$alice","creditorAccountId":"$bob","amountCents":100}"""
+            content = """{"creditorIban":"${ibanOf(bob)}","amountCents":100}"""
         }.andExpect { status { isAccepted() } }.andReturn().response.contentAsString
         val traceId = JsonPath.read<String>(json, "$.traceId")
         awaitResult(UUID.fromString(JsonPath.read(json, "$.transferId")))
@@ -102,7 +106,7 @@ class TracePropagationTest @Autowired constructor(
     fun `an unsampled traceparent (the UI's polling) records nothing`() {
         val traceId = newTraceId()
 
-        mvc.get("/api/accounts") { header("traceparent", "00-$traceId-00f067aa0ba902b7-00") }
+        mvc.get("/api/backoffice/accounts") { header("traceparent", "00-$traceId-00f067aa0ba902b7-00") }
             .andExpect { status { isOk() } }
 
         assertEquals(emptyList(), spanNames(traceId))
@@ -113,7 +117,9 @@ class TracePropagationTest @Autowired constructor(
         val (alice, bob) = fundedAccounts()
         val traceId = newTraceId()
         val transferId = postTransfer(
-            """{"debtorAccountId":"$alice","creditorAccountId":"$bob","amountCents":700}""",
+            alice,
+            ibanOf(bob),
+            700,
             traceparent = "00-$traceId-00f067aa0ba902b7-01",
             expectedTraceId = traceId,
         )
@@ -140,7 +146,9 @@ class TracePropagationTest @Autowired constructor(
         val (alice, _) = fundedAccounts()
         val traceId = newTraceId()
         val transferId = postTransfer(
-            """{"debtorAccountId":"$alice","creditorIban":"DE89370400440532013000","amountCents":2500}""",
+            alice,
+            "DE89370400440532013000",
+            2500,
             traceparent = "00-$traceId-00f067aa0ba902b7-01",
             expectedTraceId = traceId,
         )
@@ -168,7 +176,7 @@ class TracePropagationTest @Autowired constructor(
     fun `static UI files are not traced`() {
         val traceId = newTraceId()
 
-        mvc.get("/app.js") { header("traceparent", "00-$traceId-00f067aa0ba902b7-01") }
+        mvc.get("/common.js") { header("traceparent", "00-$traceId-00f067aa0ba902b7-01") }
             .andExpect { status { isOk() } }
 
         assertEquals(emptyList(), spanNames(traceId))
@@ -192,7 +200,7 @@ class TracePropagationTest @Autowired constructor(
     private fun awaitSent(transferId: UUID) {
         val deadline = System.nanoTime() + 10_000_000_000L
         while (System.nanoTime() < deadline) {
-            val json = mvc.get("/api/transfers/$transferId").andReturn().response.contentAsString
+            val json = mvc.get("/api/backoffice/transfers/$transferId").andReturn().response.contentAsString
             if (json.isNotEmpty() && JsonPath.read<String>(json, "$.status") == "SENT_TO_EXTERNAL_BANK") return
             Thread.sleep(50)
         }
@@ -213,7 +221,7 @@ class TracePropagationTest @Autowired constructor(
     private fun fundedAccounts(): Pair<UUID, UUID> {
         val alice = openAccount()
         val bob = openAccount()
-        val json = mvc.post("/api/accounts/$alice/deposits") {
+        val json = mvc.post("/api/backoffice/accounts/$alice/deposits") {
             contentType = MediaType.APPLICATION_JSON
             content = """{"amountCents":100000}"""
         }.andReturn().response.contentAsString
@@ -221,20 +229,27 @@ class TracePropagationTest @Autowired constructor(
         return alice to bob
     }
 
+    private val ibans = mutableMapOf<UUID, String>()
+
+    private fun ibanOf(account: UUID) = ibans.getValue(account)
+
     private fun openAccount(): UUID {
-        val json = mvc.post("/api/accounts") {
+        val json = mvc.post("/api/backoffice/accounts") {
             contentType = MediaType.APPLICATION_JSON
             content = "{}"
         }
             .andReturn().response.contentAsString
-        return UUID.fromString(JsonPath.read(json, "$.id"))
+        val id = UUID.fromString(JsonPath.read(json, "$.id"))
+        ibans[id] = JsonPath.read(json, "$.iban")
+        return id
     }
 
-    private fun postTransfer(body: String, traceparent: String, expectedTraceId: String): UUID {
-        val json = mvc.post("/api/transfers") {
+    /** Online banking: money from an account to an IBAN. */
+    private fun postTransfer(from: UUID, toIban: String, amountCents: Long, traceparent: String, expectedTraceId: String): UUID {
+        val json = mvc.post("/api/customer/accounts/$from/transfers") {
             contentType = MediaType.APPLICATION_JSON
             header("traceparent", traceparent)
-            content = body
+            content = """{"creditorIban":"$toIban","amountCents":$amountCents}"""
         }.andExpect {
             status { isAccepted() }
             jsonPath("$.traceId") { value(expectedTraceId) }

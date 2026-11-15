@@ -27,8 +27,8 @@ OTLP to `localhost:4318`); other environments override them, e.g. with `SPRING_D
 
 While it runs:
 
-- UI: http://localhost:8080
-- API: http://localhost:8080/api
+- UI: http://localhost:8080 (online banking, back office, operations)
+- API: http://localhost:8080/api (`/api/customer`, `/api/backoffice`, `/api/operations`)
 - Temporal Web UI: http://localhost:8233
 - Grafana (traces, metrics, logs): http://localhost:3000
 

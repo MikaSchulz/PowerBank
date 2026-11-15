@@ -18,7 +18,9 @@ OpenTelemetry with Grafana LGTM, Gradle 9.
 - **Double-entry ledger:** immutable postings; every transfer sums up to zero, enforced by the database.
 - **End-to-end telemetry:** one trace from the click in the browser through Temporal into the SQL, metrics, logs,
   dashboards and alerts for the app, the Temporal server and Postgres. No personal data in any of it.
-- **UI** to click through everything, including failure scenarios.
+- **UI** in three areas, like a real bank: online banking for customers, the back office for employees (approvals,
+  payments under investigation, accounts), operations for admins (ledger check, clearing house chaos); failure
+  scenarios included.
 
 ## Quick start
 

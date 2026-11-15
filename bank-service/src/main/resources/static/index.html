@@ -3,195 +3,52 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>PowerBank</title>
+  <title>PowerBank · Start</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%235b4cf0'/%3E%3Cpath d='M18 4 8 18h7l-2 10 11-15h-7z' fill='white'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="app.css">
-  <script type="module" src="app.js"></script>
+  <script type="module" src="index.js"></script>
 </head>
 <body>
 <header class="topbar">
-  <div class="brand">
+  <a class="brand" href="./">
     <span class="logo" aria-hidden="true">
       <svg viewBox="0 0 32 32"><path d="M18 4 8 18h7l-2 10 11-15h-7z"/></svg>
     </span>
-    <div class="brand-text">
+    <span class="brand-text">
       <strong id="bank-name">PowerBank</strong>
       <small id="bank-bic">Temporal banking lab</small>
-    </div>
-  </div>
-  <div class="topbar-right">
-    <div id="ledger-health" class="health" title="Double-entry check: all postings must sum up to zero"></div>
-    <a id="grafana-link" class="btn ghost" href="http://localhost:3000" target="_blank" rel="noopener">
-      <span>Grafana</span>
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg>
-    </a>
-    <a id="temporal-link" class="btn ghost" href="http://localhost:8233" target="_blank" rel="noopener">
-      <span>Temporal UI</span>
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg>
-    </a>
-  </div>
+    </span>
+  </a>
+  <nav class="area-nav" aria-label="Areas">
+    <a href="customer.html" data-area="customer">Online banking</a>
+    <a href="backoffice.html" data-area="backoffice">Back office</a>
+    <a href="operations.html" data-area="operations">Operations</a>
+  </nav>
+  <div class="topbar-right"></div>
 </header>
 
-<main class="layout">
-  <section id="approvals" class="approvals" hidden></section>
-
-  <div class="grid">
-    <section class="panel accounts-panel">
-      <div class="panel-head">
-        <h2>Accounts</h2>
-        <button id="new-account" class="btn primary small" type="button">New account</button>
-      </div>
-      <div id="accounts" class="account-list"></div>
-
-      <div class="panel-sub">
-        <h3>Bank accounts</h3>
-        <p class="hint">System accounts may go negative: the cash desk brings money in, clearing holds it on its way to external banks, settlement is the bank's account at the clearing house.</p>
-      </div>
-      <div id="system-accounts" class="system-list"></div>
-    </section>
-
-    <div class="right-col">
-      <section class="panel">
-        <div class="panel-head">
-          <h2>New transfer</h2>
-          <div class="segmented" role="tablist" aria-label="Transfer type">
-            <button type="button" role="tab" data-mode="internal" class="active">Internal</button>
-            <button type="button" role="tab" data-mode="external">External bank</button>
-            <button type="button" role="tab" data-mode="deposit">Deposit</button>
-          </div>
-        </div>
-
-        <form id="transfer-form" class="transfer-form" autocomplete="off">
-          <label class="field" data-show="internal external">
-            <span>From</span>
-            <select name="debtor"></select>
-          </label>
-          <label class="field" data-show="internal">
-            <span>To</span>
-            <select name="creditor"></select>
-          </label>
-          <label class="field" data-show="deposit">
-            <span>To account</span>
-            <select name="depositTarget"></select>
-          </label>
-          <label class="field wide" data-show="external">
-            <span>Creditor IBAN</span>
-            <span class="input-row">
-              <input name="iban" class="mono" placeholder="DE89 3704 0044 0532 0130 00" spellcheck="false">
-              <button type="button" class="btn ghost small" id="random-iban">Random</button>
-            </span>
-          </label>
-          <label class="field">
-            <span>Amount</span>
-            <span class="amount-input">
-              <input name="amount" inputmode="decimal" placeholder="0.00">
-              <span>€</span>
-            </span>
-          </label>
-          <label class="field">
-            <span>Transfer ID <em>idempotency key</em></span>
-            <span class="input-row">
-              <input name="transferId" class="mono" placeholder="generated if empty" spellcheck="false">
-              <button type="button" class="btn ghost small" id="new-id">New</button>
-            </span>
-          </label>
-          <div class="form-actions">
-            <button class="btn primary" type="submit">Send transfer</button>
-          </div>
-        </form>
-
-        <div class="scenarios">
-          <div class="scenarios-head">
-            <h3>Scenarios</h3>
-            <span class="hint">One click each. Uses the accounts selected above.</span>
-          </div>
-          <div class="chips">
-            <button type="button" class="chip-btn" data-scenario="limit">Above approval limit</button>
-            <button type="button" class="chip-btn" data-scenario="insufficient">Insufficient funds</button>
-            <button type="button" class="chip-btn" data-scenario="rejected">Clearing house rejects</button>
-            <button type="button" class="chip-btn" data-scenario="duplicate">Duplicate submission</button>
-            <button type="button" class="chip-btn" data-scenario="burst">Concurrent burst ×10</button>
-          </div>
-          <p id="scenario-hint" class="scenario-hint"></p>
-        </div>
-      </section>
-
-      <section class="panel">
-        <div class="panel-head">
-          <h2>Transfers</h2>
-          <div class="filters" id="filters" role="tablist" aria-label="Filter transfers">
-            <button type="button" data-filter="all" class="active">All</button>
-            <button type="button" data-filter="flight">In flight</button>
-            <button type="button" data-filter="approval">Approval</button>
-            <button type="button" data-filter="done">Done</button>
-            <button type="button" data-filter="failed">Failed</button>
-          </div>
-        </div>
-        <div id="account-filter" class="account-filter" hidden></div>
-        <div id="transfers" class="feed"></div>
-      </section>
-    </div>
+<main class="layout landing">
+  <h1>Three areas, as in a real bank</h1>
+  <p class="lead">Each area shows what its role needs and talks to its own part of the API. There is no login yet
+    (<a href="https://github.com/MikaSchulz/PowerBank/issues/36" target="_blank" rel="noopener">#36</a>): pick one.</p>
+  <div class="tiles">
+    <a class="tile" href="customer.html">
+      <span class="tile-icon customer"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-7 8-7s8 3 8 7"/></svg></span>
+      <strong>Online banking</strong>
+      <span>For a customer: one account with its IBAN and balance, money to any IBAN, every transfer in and out.</span>
+    </a>
+    <a class="tile" href="backoffice.html">
+      <span class="tile-icon backoffice"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 13h18"/></svg></span>
+      <strong>Back office</strong>
+      <span>For bank employees: approvals, payments under investigation, opening accounts, cash at the counter, every transfer.</span>
+    </a>
+    <a class="tile" href="operations.html">
+      <span class="tile-icon operations"><svg viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg></span>
+      <strong>Operations</strong>
+      <span>For admins: the ledger check, the bank's own accounts, the clearing house's chaos settings, Grafana and Temporal.</span>
+    </a>
   </div>
 </main>
-
-<div id="scrim" class="scrim" hidden></div>
-<aside id="drawer" class="drawer" aria-hidden="true" aria-label="Details">
-  <button class="icon-btn drawer-close" type="button" data-action="close-drawer" aria-label="Close">
-    <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
-  </button>
-  <div id="drawer-content"></div>
-</aside>
-
-<dialog id="account-dialog">
-  <form method="dialog" class="dialog-form">
-    <h2>New account</h2>
-    <p class="hint">Names stay in your browser. The bank only knows pseudonymous IDs.</p>
-    <label class="field"><span>Nickname</span><input name="nickname" placeholder="e.g. Alice" maxlength="40"></label>
-    <label class="field"><span>Overdraft limit</span><span class="amount-input"><input name="overdraft" inputmode="decimal" placeholder="0.00"><span>€</span></span></label>
-    <label class="field"><span>Initial deposit</span><span class="amount-input"><input name="deposit" inputmode="decimal" placeholder="0.00"><span>€</span></span></label>
-    <div class="dialog-actions">
-      <button class="btn ghost" value="cancel" formnovalidate>Cancel</button>
-      <button class="btn primary" value="create">Create account</button>
-    </div>
-  </form>
-</dialog>
-
-<dialog id="deposit-dialog">
-  <form method="dialog" class="dialog-form">
-    <h2>Deposit</h2>
-    <p class="hint">A deposit is an internal transfer from the cash desk, so it runs through the same workflow.</p>
-    <label class="field"><span>Amount</span><span class="amount-input"><input name="amount" inputmode="decimal" placeholder="0.00"><span>€</span></span></label>
-    <div class="dialog-actions">
-      <button class="btn ghost" value="cancel" formnovalidate>Cancel</button>
-      <button class="btn primary" value="deposit">Deposit</button>
-    </div>
-  </form>
-</dialog>
-
-<dialog id="rename-dialog">
-  <form method="dialog" class="dialog-form">
-    <h2>Rename account</h2>
-    <label class="field"><span>Nickname</span><input name="nickname" maxlength="40"></label>
-    <div class="dialog-actions">
-      <button class="btn ghost" value="cancel" formnovalidate>Cancel</button>
-      <button class="btn primary" value="save">Save</button>
-    </div>
-  </form>
-</dialog>
-
-<dialog id="deny-dialog">
-  <form method="dialog" class="dialog-form">
-    <h2>Deny transfer</h2>
-    <p class="hint">Sends the <code>approve</code> update with <code>approved: false</code>. The workflow rejects the transfer and books nothing.</p>
-    <label class="field"><span>Comment <em>optional</em></span><input name="comment" placeholder="e.g. customer reports fraud" maxlength="120"></label>
-    <div class="dialog-actions">
-      <button class="btn ghost" value="cancel" formnovalidate>Cancel</button>
-      <button class="btn danger" value="deny">Deny transfer</button>
-    </div>
-  </form>
-</dialog>
-
 <div id="toasts" class="toasts" aria-live="polite"></div>
-<noscript><p class="noscript">PowerBank needs JavaScript.</p></noscript>
 </body>
 </html>

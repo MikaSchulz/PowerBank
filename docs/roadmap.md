@@ -10,7 +10,7 @@ The stages of the original plan. Open work, including everything beyond them, is
       account (tested in the ledger and through REST and workflows).
 - [x] **5. External bank saga:** rejection and permanent unavailability lead to a refund, all balances add up.
 - [ ] **6. Standing orders** (Temporal schedules), planned in [issue #1](https://github.com/MikaSchulz/PowerBank/issues/1)
-- [ ] **7. Account opening with approval** (replaces `POST /api/accounts` and the placeholder customer)
+- [ ] **7. Account opening with approval** (replaces `POST /api/backoffice/accounts` and the placeholder customer)
 - [x] **8. Suspected fraud:** the query shows `AWAITING_APPROVAL`; approval, denial and deadline expiry are tested,
       the deadline tests with time skipping.
 - [ ] **9. Encryption** (payload codec, codec server; there's a spot for it in `TemporalConfig`)

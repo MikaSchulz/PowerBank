@@ -77,7 +77,7 @@ jobs:
       - name: Smoke test
         run: |
           sleep 30
-          curl -fsS localhost:8080/api/ledger/summary | python3 -c '
+          curl -fsS localhost:8080/api/operations/ledger/summary | python3 -c '
           import json, sys
           summary = json.load(sys.stdin)
           print(summary)

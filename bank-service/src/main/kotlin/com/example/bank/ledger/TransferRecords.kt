@@ -62,18 +62,20 @@ class TransferRecords(private val jdbc: JdbcClient) {
             .update()
     }
 
-    /** Newest first; optionally only transfers where the account is debtor or creditor. */
-    fun list(accountId: UUID?, limit: Int): List<TransferRecord> =
+    /** Newest first; optionally only transfers where the account is debtor or creditor, or only in one status. */
+    fun list(accountId: UUID?, limit: Int, status: TransferStatus? = null): List<TransferRecord> =
         jdbc.sql(
             """
             SELECT $COLUMNS
             FROM transfers
-            WHERE CAST(:account AS UUID) IS NULL OR debtor_account_id = :account OR creditor_account_id = :account
+            WHERE (CAST(:account AS UUID) IS NULL OR debtor_account_id = :account OR creditor_account_id = :account)
+              AND (CAST(:status AS TEXT) IS NULL OR status = :status)
             ORDER BY created_at DESC, id
             LIMIT :limit
             """,
         )
             .param("account", accountId)
+            .param("status", status?.name)
             .param("limit", limit)
             .query { rs, _ -> toRecord(rs) }
             .list()

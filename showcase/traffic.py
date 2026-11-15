@@ -1,7 +1,8 @@
 """Demo traffic for the showcase: keeps the bank busy so the dashboards, traces and alerts have something to show.
 
-Uses only the public REST API, like the UI does: opens a few accounts, then sends internal transfers and deposits, now
-and then a transfer that needs an approval (approved or denied a little later) and a burst of concurrent transfers.
+Uses only the public REST API, like the UIs do: the back office opens a few accounts, takes cash deposits and decides
+approvals; customers send transfers to each other in online banking, now and then one that needs an approval
+(approved or denied a little later), and a burst of concurrent transfers.
 
 No transfers to other banks yet: they need bank B, which joins the showcase with #62, together with the clearing
 house's chaos settings.
@@ -51,16 +52,21 @@ def wait_for_bank():
 
 
 def open_account(deposit_cents):
-    status, body = call("POST", "/api/accounts", {"overdraftLimitCents": random.choice([0, 0, 200_00])})
+    """The back office opens the account and takes a cash deposit at the counter."""
+    status, body = call("POST", "/api/backoffice/accounts", {"overdraftLimitCents": random.choice([0, 0, 200_00])})
     if status != 201:
         return None
-    account = body["id"]
-    call("POST", f"/api/accounts/{account}/deposits", {"amountCents": deposit_cents})
-    return account
+    deposit(body["id"], deposit_cents)
+    return {"id": body["id"], "iban": body["iban"]}
+
+
+def deposit(account_id, cents):
+    call("POST", f"/api/backoffice/accounts/{account_id}/deposits", {"amountCents": cents})
 
 
 def transfer(debtor, creditor, cents):
-    status, answer = call("POST", "/api/transfers", {"debtorAccountId": debtor, "creditorAccountId": creditor, "amountCents": cents})
+    """A customer in online banking: money to an IBAN; one of this bank's, so it is booked internally."""
+    status, answer = call("POST", f"/api/customer/accounts/{debtor['id']}/transfers", {"creditorIban": creditor["iban"], "amountCents": cents})
     return answer["transferId"] if status == 202 else None
 
 
@@ -69,7 +75,7 @@ def decide_later(transfer_id):
     def decide():
         time.sleep(random.uniform(5, 20))
         approved = random.random() < 0.7
-        status, _ = call("POST", f"/api/transfers/{transfer_id}/approval", {"approved": approved, "comment": "showcase"})
+        status, _ = call("POST", f"/api/backoffice/transfers/{transfer_id}/approval", {"approved": approved, "comment": "showcase"})
         log(f"approval {transfer_id[:8]}: {'approved' if approved else 'denied'} ({status})")
     threading.Thread(target=decide, daemon=True).start()
 
@@ -87,10 +93,10 @@ def main():
             transfer_id = transfer(debtor, creditor, cents=random.randint(5, 300) * 100)
             log(f"internal transfer {(transfer_id or 'refused')[:8]}")
         elif roll < 0.85:
-            call("POST", f"/api/accounts/{debtor}/deposits", {"amountCents": random.randint(50, 1_000) * 100})
+            deposit(debtor["id"], random.randint(50, 1_000) * 100)
             log("deposit")
         elif roll < 0.90:
-            call("POST", f"/api/accounts/{debtor}/deposits", {"amountCents": APPROVAL_LIMIT_CENTS + 5_000_00})
+            deposit(debtor["id"], APPROVAL_LIMIT_CENTS + 5_000_00)
             transfer_id = transfer(debtor, creditor, cents=APPROVAL_LIMIT_CENTS + random.randint(0, 4_000) * 100)
             if transfer_id:
                 log(f"transfer {transfer_id[:8]} above the approval limit")
