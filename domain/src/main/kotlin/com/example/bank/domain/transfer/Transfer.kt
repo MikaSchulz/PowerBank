@@ -14,6 +14,12 @@ enum class TransferKind {
 
     /** Cash deposit: an internal transfer from the cash account. */
     DEPOSIT,
+
+    /**
+     * From another bank, as a SEPA Instant payment through the clearing house: checked and answered, credited from the
+     * settlement account only once the clearing house confirms the settlement.
+     */
+    INCOMING,
 }
 
 /**
@@ -24,7 +30,9 @@ enum class TransferKind {
  *           └→ AWAITING_APPROVAL → APPROVED ┴─→ RESERVED → SENT_TO_EXTERNAL_BANK ─┬→ COMPLETED   (external)
  *                                                   │                │             └→ REFUNDED
  *                                                   └────────────────┴─→ UNDER_INVESTIGATION ─→ COMPLETED or REFUNDED
- * RECEIVED, AWAITING_APPROVAL, APPROVED ─→ REJECTED (nothing booked)
+ * RECEIVED → ACCEPTED ─┬→ BOOKED                                                                  (incoming)
+ *                      └→ UNDER_INVESTIGATION ─→ BOOKED or REJECTED
+ * RECEIVED, AWAITING_APPROVAL, APPROVED ─→ REJECTED (nothing booked; incoming also from ACCEPTED)
  * ```
  *
  * An external transfer is completed or refunded only on a final status from the clearing house (or, before SEPA
@@ -40,6 +48,9 @@ enum class TransferStatus(val finished: Boolean = false) {
     /** Approved, about to be booked. */
     APPROVED,
 
+    /** Incoming payment: the account can receive it, the bank said yes; it is credited once the clearing house settles. */
+    ACCEPTED,
+
     /** External transfer: the customer is debited, the amount is reserved on the clearing account, not sent yet. */
     RESERVED,
 
@@ -47,12 +58,13 @@ enum class TransferStatus(val finished: Boolean = false) {
     SENT_TO_EXTERNAL_BANK,
 
     /**
-     * External transfer without a final status: neither a confirmation nor a status inquiry gave a definitive answer.
-     * The amount stays reserved; the transfer keeps asking the clearing house and waits for its answer.
+     * External transfer or incoming payment without a final status: neither a confirmation nor a status inquiry gave a
+     * definitive answer, or an incoming payment could not be credited. Nothing is guessed: an outgoing amount stays
+     * reserved, an incoming one is not credited, until the final status is known.
      */
     UNDER_INVESTIGATION,
 
-    /** Internal transfer or deposit: debit and credit are booked. */
+    /** Internal transfer or deposit: debit and credit are booked. Incoming payment: credited to the customer. */
     BOOKED(finished = true),
 
     /** The external bank accepted; with SEPA Instant, the payment is settled through the clearing house. */
@@ -61,7 +73,10 @@ enum class TransferStatus(val finished: Boolean = false) {
     /** The external bank rejected, or the payment never reached the clearing house; the debit was booked back. */
     REFUNDED(finished = true),
 
-    /** Rejected before anything was booked: insufficient funds, approval denied or not given in time, … */
+    /**
+     * Rejected before anything was booked: insufficient funds, approval denied or not given in time, an incoming
+     * payment the account can't receive or the clearing house didn't settle, …
+     */
     REJECTED(finished = true),
 }
 

@@ -12,7 +12,7 @@ observability/grafana/  dashboards and alert rules, mounted into the LGTM contai
 observability/otel-collector/  collector config for Temporal server and Postgres metrics and logs
 bank-service/
   ledger/        event repositories (postings, transfer history), Ledger (transactions, locks), queries
-  workflow/      TransferWorkflow
+  workflow/      TransferWorkflow, IncomingPaymentWorkflow, ClearingHouseWait (shared wait for a final status)
   activities/    LedgerActivities, RiskActivities, ClearingHouseActivities (pacs.008, pacs.028 over HTTP)
   externalbank/  the simulated external bank from before SEPA Instant: only for executions started before #59
   api/           REST
@@ -35,6 +35,9 @@ ID `transfer-<transferId>`):
    send the `pacs.008` (`SENT_TO_EXTERNAL_BANK`), wait for the final status → `COMPLETED` (settled) or `REFUNDED`.
    Without a final status: `UNDER_INVESTIGATION`, the amount stays reserved. Details below.
 
+Payments from other banks are transfers too (kind `INCOMING`), with their own workflow: see
+[An incoming payment](#an-incoming-payment-sepa-instant).
+
 Who decides what ([decision 0007](decisions/0007-workflow-runs-the-process-domain-decides-and-records.md)):
 
 | | Decides | Lives in |
@@ -48,7 +51,9 @@ RECEIVED ─┬─────────────────────�
           └→ AWAITING_APPROVAL → APPROVED ┴─→ RESERVED → SENT_TO_EXTERNAL_BANK ─┬→ COMPLETED   (external)
                                                   │                │             └→ REFUNDED
                                                   └────────────────┴─→ UNDER_INVESTIGATION ─→ COMPLETED or REFUNDED
-RECEIVED, AWAITING_APPROVAL, APPROVED ─→ REJECTED (nothing booked)
+RECEIVED → ACCEPTED ─┬→ BOOKED                                                                 (incoming)
+                     └→ UNDER_INVESTIGATION ─→ BOOKED or REJECTED
+RECEIVED, AWAITING_APPROVAL, APPROVED ─→ REJECTED (nothing booked; incoming also from ACCEPTED)
 ```
 
 ### A transfer with an approval, step by step
@@ -201,6 +206,66 @@ Transfers whose workflow reached its external part before #59 continue with the 
 test replays the recorded histories of both versions (`v1-*`, `v2-*`). Once no old execution is open any more, the old
 branch and the simulator can go.
 
+### An incoming payment: SEPA Instant
+
+The bank as the creditor bank (#60). The clearing house's `pacs.008` starts the work, so nothing waits for a payment
+that may never come ([decision 0007](decisions/0007-workflow-runs-the-process-domain-decides-and-records.md)).
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant CH as Clearing house
+    participant API as Inbound API<br/>/api/clearing/inbound
+    box rgb(232, 240, 254) Workflow: the process, in Temporal
+        participant WF as IncomingPaymentWorkflow
+    end
+    box rgb(254, 243, 224) Activities: side effects with retries
+        participant LA as LedgerActivities
+        participant CA as ClearingHouseActivities
+    end
+    box rgb(230, 244, 234) Ledger: rules and business state
+        participant DB as Transfer decider<br/>and Postgres
+    end
+
+    CH->>API: POST pacs.008 (UETR, creditor IBAN, amount)
+    API->>DB: RECEIVED (kind INCOMING, creditor account by IBAN)
+    API->>WF: start incoming-payment-{transferId} (a duplicate is ignored)
+    API-->>CH: 202
+    WF->>LA: answerIncomingPayment
+    LA->>DB: ACCEPTED, or REJECTED with AC01, AC04 or AC06 (decided once)
+    WF->>CA: answer (retried until the 10-second deadline)
+    CA->>CH: POST pacs.002 ACCP or RJCT
+
+    opt accepted
+        alt confirmation
+            CH->>API: POST pacs.002 ACSC or RJCT
+            API->>WF: update "confirm"
+        else no confirmation within 20 seconds
+            WF->>CA: inquire (pacs.028), as for an outgoing transfer
+        end
+        alt ACSC
+            WF->>LA: creditIncomingPayment
+            LA->>DB: BOOKED: settlement account → customer
+        else RJCT
+            WF->>LA: rejectTransfer
+            LA->>DB: REJECTED, nothing booked
+        end
+    end
+```
+
+- **The check:** `IncomingPaymentPolicy` in `domain`: an unknown IBAN or a system account (`AC01`), a closed account
+  (`AC04`), a blocked one (`AC06`). Stricter than an internal credit, which a blocked account still receives. The
+  ledger records the answer with the transfer decider in one transaction, including the reason code (`reason_code`),
+  so a retried activity answers the same.
+- **Credited only on ACSC:** from the settlement account, which mirrors the bank's account at the clearing house. If
+  the account was closed in the seconds since the answer, nothing is booked and the payment goes under investigation:
+  the money is at the bank and has to go back (recall, #63).
+- **IDs:** the ledger's transfer ID is derived from the UETR (`incomingPaymentId`), so a repeated message finds the
+  same payment, and a payment to the bank itself (debtor and creditor bank are the same) has two transfers that
+  never collide. Confirmations go to every workflow of the bank that expects that UETR.
+- **The wait** for the final status is the same as for an outgoing transfer (`ClearingHouseWait`), except that
+  "unknown" is never final: the clearing house forwarded the payment, so it knows it.
+
 ## Ledger
 
 - Every posting is an immutable row in `postings` (a trigger forbids UPDATE and DELETE). The balance is their sum.
@@ -245,8 +310,8 @@ mechanism (#55). It has its own Postgres schema and Temporal namespace (`clearin
   5. confirm the result to both banks.
 - **API** (`/api/clearing`): `pacs008` from debtor banks, `pacs002` answers from creditor banks, `pacs028` status
   inquiries, and for operations the payments, the settlement balances and chaos settings (delayed or lost forwards).
-- Banks receive messages at `POST /api/clearing/inbound/pacs002` (the confirmations of their own payments, #59) and
-  `…/pacs008` (incoming payments, #60).
+- Banks receive messages at `POST /api/clearing/inbound/pacs008` (payments from other banks) and `…/pacs002` (the
+  final status of a payment, to both banks); they answer a forwarded payment at the clearing house's `pacs002`.
 
 ## Architecture rules
 

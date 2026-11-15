@@ -288,6 +288,7 @@ input:focus, select:focus { outline: none; border-color: var(--accent); box-shad
 .tx-icon { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; background: var(--surface-3); color: var(--muted); }
 .tx-icon.external { background: var(--info-soft); color: var(--info); }
 .tx-icon.deposit { background: var(--ok-soft); color: var(--ok); }
+.tx-icon.incoming { background: var(--ok-soft); color: var(--ok); }
 .tx-main { display: flex; flex-direction: column; min-width: 0; }
 .tx-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tx-sub { color: var(--faint); font-size: 12px; }

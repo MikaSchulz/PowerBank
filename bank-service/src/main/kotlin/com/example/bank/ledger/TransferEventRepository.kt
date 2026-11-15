@@ -4,6 +4,7 @@ import com.example.bank.domain.AccountId
 import com.example.bank.domain.TransferId
 import com.example.bank.domain.transfer.AmountReserved
 import com.example.bank.domain.transfer.ApprovalRequired
+import com.example.bank.domain.transfer.IncomingPaymentAccepted
 import com.example.bank.domain.transfer.InvestigationStarted
 import com.example.bank.domain.transfer.TransferApproved
 import com.example.bank.domain.transfer.TransferBooked
@@ -64,9 +65,9 @@ class TransferEventRepository(private val jdbc: JdbcClient) : EventRepository<Tr
             .orElse(null)
 
     private fun history(id: TransferId): List<TransferEvent> =
-        jdbc.sql("SELECT type, reason FROM transfer_events WHERE transfer_id = :id ORDER BY id")
+        jdbc.sql("SELECT type, reason, reason_code FROM transfer_events WHERE transfer_id = :id ORDER BY id")
             .param("id", id.value)
-            .query { rs, _ -> toEvent(id, rs.getString("type"), rs.getString("reason")) }
+            .query { rs, _ -> toEvent(id, rs.getString("type"), rs.getString("reason"), rs.getString("reason_code")) }
             .list()
 
     private fun persist(event: TransferEvent) {
@@ -86,15 +87,19 @@ class TransferEventRepository(private val jdbc: JdbcClient) : EventRepository<Tr
                 .update()
 
             is TransferStatusChanged -> {
-                jdbc.sql("INSERT INTO transfer_events (transfer_id, type, status, reason) VALUES (:id, :type, :status, :reason)")
+                jdbc.sql(
+                    "INSERT INTO transfer_events (transfer_id, type, status, reason, reason_code) VALUES (:id, :type, :status, :reason, :code)",
+                )
                     .param("id", event.transferId.value)
                     .param("type", event::class.simpleName)
                     .param("status", event.status.name)
                     .param("reason", event.reason)
+                    .param("code", event.reasonCode)
                     .update()
-                jdbc.sql("UPDATE transfers SET status = :status, reason = :reason, updated_at = now() WHERE id = :id")
+                jdbc.sql("UPDATE transfers SET status = :status, reason = :reason, reason_code = :code, updated_at = now() WHERE id = :id")
                     .param("status", event.status.name)
                     .param("reason", event.reason)
+                    .param("code", event.reasonCode)
                     .param("id", event.transferId.value)
                     .update()
             }
@@ -104,7 +109,7 @@ class TransferEventRepository(private val jdbc: JdbcClient) : EventRepository<Tr
     }
 
     companion object {
-        fun toEvent(id: TransferId, type: String, reason: String?): TransferEvent = when (type) {
+        fun toEvent(id: TransferId, type: String, reason: String?, reasonCode: String? = null): TransferEvent = when (type) {
             "ApprovalRequired" -> ApprovalRequired(id, reason.orEmpty())
             "TransferApproved" -> TransferApproved(id, reason)
             "TransferBooked" -> TransferBooked(id)
@@ -114,7 +119,8 @@ class TransferEventRepository(private val jdbc: JdbcClient) : EventRepository<Tr
             "TransferSettled" -> TransferSettled(id)
             "TransferCompleted" -> TransferCompleted(id)
             "TransferRefunded" -> TransferRefunded(id, reason.orEmpty())
-            "TransferRejected" -> TransferRejected(id, reason.orEmpty())
+            "TransferRejected" -> TransferRejected(id, reason.orEmpty(), reasonCode)
+            "IncomingPaymentAccepted" -> IncomingPaymentAccepted(id)
             else -> error("Unknown transfer event: $type")
         }
     }

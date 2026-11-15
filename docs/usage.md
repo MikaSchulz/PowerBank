@@ -23,9 +23,10 @@ Open **http://localhost:8080** once the app is running. The UI is a plain HTML/J
 1. **Quick start** creates Alice (1,000 €, 200 € overdraft) and Bob (250 €).
 2. Send a normal internal transfer and watch it go from *Received* to *Booked*.
 3. Run every scenario once and check the result in the drawer and the ledger health badge.
-4. With the clearing house running ([local setup](local-setup.md#the-clearing-house)), send an external transfer: it
-   goes *Reserved* → *At clearing house* → *Refunded* with the clearing house's reason (`RC01` for a bank outside it;
-   until bank B answers payments, #60, `AB05` for bank B).
+4. With bank B and the clearing house running ([local setup](local-setup.md#the-clearing-house)), send an external
+   transfer to an IBAN of bank B: in bank A it goes *Reserved* → *At clearing house* → *Completed*, in bank B the
+   incoming payment *Received* → *Accepted* → *Booked*. To an IBAN bank B doesn't have, both sides end rejected with
+   `AC01`; to a bank outside the clearing house with `RC01`.
 5. Stop the clearing house and send an external transfer: the amount stays *Reserved*, the workflow asks with status
    inquiries, and after 5 minutes the transfer is *Under investigation*. Start the clearing house again: at the next
    inquiry (every 10 minutes) it learns the clearing house never got the payment and refunds it.
@@ -67,4 +68,5 @@ More endpoints:
 | `GET` | `/api/transfers/{id}/postings` | the postings a transfer created |
 | `GET` | `/api/transfers/{id}/history` | its business history: every status with time and reason |
 | `GET` | `/api/ledger/summary` | sum of all postings (must be 0), counts |
-| `POST` | `/api/clearing/inbound/pacs002` | for the clearing house: the final status of a payment this bank sent |
+| `POST` | `/api/clearing/inbound/pacs008` | for the clearing house: a payment from another bank |
+| `POST` | `/api/clearing/inbound/pacs002` | for the clearing house: the final status of a payment, sent or received |

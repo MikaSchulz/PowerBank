@@ -2,6 +2,8 @@ package com.example.bank.domain.transfer
 
 import com.example.bank.domain.AccountId
 import com.example.bank.domain.TransferId
+import com.example.bank.domain.account.AccountKind
+import com.example.bank.domain.account.AccountStatus
 import com.example.bank.domain.account.given
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
@@ -260,6 +262,87 @@ class TransferDeciderTest {
             transferDecider.given(external, reserved, sent, TransferSettled(t))
                 .whenCommand(StartInvestigation(t, "late"))
                 .thenEvents(TransferCommandRejected(t, "Transfer in status COMPLETED cannot be investigated"))
+    }
+
+    @Nested
+    inner class IncomingPayment {
+        private val settlement = AccountId(UUID.randomUUID())
+        private val incoming = TransferReceived(t, TransferKind.INCOMING, settlement, bob, 50_00)
+        private val accepted = IncomingPaymentAccepted(t)
+
+        @Test
+        fun `an incoming payment is accepted, then credited once settled`() {
+            transferDecider.given(incoming).whenCommand(AcceptIncomingPayment(t)).thenEvents(accepted)
+            transferDecider.given(incoming, accepted).whenCommand(AcceptIncomingPayment(t)).thenNothing()
+            transferDecider.given(incoming, accepted).whenCommand(BookTransfer(t)).thenEvents(TransferBooked(t))
+        }
+
+        @Test
+        fun `nothing is credited before the bank accepted it`() =
+            transferDecider.given(incoming)
+                .whenCommand(BookTransfer(t))
+                .thenEvents(TransferCommandRejected(t, "Transfer in status RECEIVED cannot be booked"))
+
+        @Test
+        fun `rejected with the reason code the bank answers with`() =
+            transferDecider.given(incoming)
+                .whenCommand(RejectTransfer(t, "Account closed (AC04)", "AC04"))
+                .thenEvents(TransferRejected(t, "Account closed (AC04)", "AC04"))
+
+        @Test
+        fun `accepted, the clearing house can still reject it, nothing was booked`() =
+            transferDecider.given(incoming, accepted)
+                .whenCommand(RejectTransfer(t, "The creditor bank did not answer in time (AB05)"))
+                .thenEvents(TransferRejected(t, "The creditor bank did not answer in time (AB05)"))
+
+        @Test
+        fun `without a final status it is investigated, and credited or rejected later`() {
+            val investigating = InvestigationStarted(t, "No final status from the clearing house")
+            transferDecider.given(incoming, accepted)
+                .whenCommand(StartInvestigation(t, "No final status from the clearing house"))
+                .thenEvents(investigating)
+            transferDecider.given(incoming, accepted, investigating).whenCommand(BookTransfer(t)).thenEvents(TransferBooked(t))
+            transferDecider.given(
+                incoming,
+                accepted,
+                investigating,
+            ).whenCommand(RejectTransfer(t, "AB05")).thenEvents(TransferRejected(t, "AB05"))
+        }
+
+        @Test
+        fun `a credited payment can no longer be rejected`() =
+            transferDecider.given(incoming, accepted, TransferBooked(t))
+                .whenCommand(RejectTransfer(t, "too late"))
+                .thenEvents(TransferCommandRejected(t, "Transfer in status BOOKED cannot be rejected"))
+
+        @Test
+        fun `only incoming payments are accepted, and they never go out again`() {
+            transferDecider.given(external).whenCommand(AcceptIncomingPayment(t))
+                .thenEvents(TransferCommandRejected(t, "Only incoming payments are accepted"))
+            transferDecider.given(incoming).whenCommand(ReserveAmount(t))
+                .thenEvents(TransferCommandRejected(t, "Only external transfers go to an external bank"))
+        }
+
+        @Test
+        fun `an outgoing transfer under investigation is refunded, never just rejected`() =
+            transferDecider.given(external, AmountReserved(t), InvestigationStarted(t, "unclear"))
+                .whenCommand(RejectTransfer(t, "no"))
+                .thenEvents(TransferCommandRejected(t, "Transfer in status UNDER_INVESTIGATION cannot be rejected"))
+    }
+
+    @Nested
+    inner class IncomingPolicy {
+        @Test
+        fun `an open customer account receives the payment`() =
+            assertEquals(null, IncomingPaymentPolicy.check(AccountStatus.OPEN, AccountKind.CUSTOMER))
+
+        @Test
+        fun `unknown, system, closed and blocked accounts don't`() {
+            assertEquals(IncomingRejection.UNKNOWN_ACCOUNT, IncomingPaymentPolicy.check(null, null))
+            assertEquals(IncomingRejection.UNKNOWN_ACCOUNT, IncomingPaymentPolicy.check(AccountStatus.OPEN, AccountKind.SYSTEM))
+            assertEquals(IncomingRejection.ACCOUNT_CLOSED, IncomingPaymentPolicy.check(AccountStatus.CLOSED, AccountKind.CUSTOMER))
+            assertEquals(IncomingRejection.ACCOUNT_BLOCKED, IncomingPaymentPolicy.check(AccountStatus.BLOCKED, AccountKind.CUSTOMER))
+        }
     }
 
     /** Transfers started before SEPA Instant: the simulated external bank answers, no money moves on completion. */

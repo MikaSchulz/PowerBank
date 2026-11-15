@@ -58,9 +58,10 @@ e.g. `GET /payments` and `GET /settlement-accounts`. It reaches bank A on port 8
 
 External transfers go through it (SEPA Instant, #59): the banks send their payments to `bank.clearing.url`
 (default `http://localhost:8090`). Without it, an external transfer stays reserved and goes under investigation
-after 5 minutes; once the clearing house is back, the next status inquiry settles or refunds it. Until bank B answers
-payments (#60), the clearing house rejects every payment to it after the deadline (`AB05`), and payments to banks
-that aren't participants right away (`RC01`).
+after 5 minutes; once the clearing house is back, the next status inquiry settles or refunds it. With bank A, bank B
+and the clearing house running, transfers between the two banks go through: send one in bank A's UI to an IBAN of
+bank B (`DE.. 9900 0002 …`, shown on bank B's accounts) and it is credited there seconds later. A bank that isn't a
+participant is rejected right away (`RC01`), a bank that doesn't answer after the deadline (`AB05`).
 
 ## Data and reset
 

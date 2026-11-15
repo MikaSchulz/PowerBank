@@ -54,14 +54,16 @@ In Grafana → Explore → Tempo, with TraceQL: spans carry pseudonymous busines
 | everything that touched an account | `{ span.bank.account.id = "<account-id>" }` (ledger commands) |
 | transfers from or to an account | `{ span.bank.debtor.account.id = "<id>" \|\| span.bank.creditor.account.id = "<id>" }` |
 | failed calls to the clearing house | `{ name = "bank.clearing.call" && span.outcome = "failure" }` |
+| one payment between banks, on both sides | `{ span.bank.payment.uetr = "<uetr>" }` |
 | slow lock waits | `{ name = "bank.ledger.lock" && duration > 50ms }` |
 
 The account drawer in the UI links to the account's traces. Every call to the clearing house is its own span
-(`bank.clearing.call`) with `message` (pacs.008, pacs.028), `outcome` (received or refused for a pacs.008; ACSC, RJCT,
-PDNG or unknown for a pacs.028; failure for a technical error) and `temporal.activity.attempt`; its timer
+(`bank.clearing.call`) with `message` (pacs.008, pacs.002 for the answer to an incoming payment, pacs.028), `outcome`
+(received or refused for a pacs.008 or pacs.002; ACSC, RJCT, PDNG or unknown for a pacs.028; failure for a technical
+error), the payment's UETR (`bank.payment.uetr`) and `temporal.activity.attempt`; its timer
 `bank_clearing_call_milliseconds_*{message,outcome}` counts them in Prometheus. The timer
-`bank_transfer_clearing_wait{resolved_by}` measures how long an external transfer waited for its final status, and
-whether the confirmation or a status inquiry brought it.
+`bank_transfer_clearing_wait{direction,resolved_by}` measures how long a payment, outgoing or incoming, waited for its
+final status, and whether the confirmation or a status inquiry brought it.
 - Try it with curl: `-H 'traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01'`, then search for
   that trace ID in Grafana.
 

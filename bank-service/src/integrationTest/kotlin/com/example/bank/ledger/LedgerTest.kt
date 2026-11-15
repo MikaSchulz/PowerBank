@@ -255,6 +255,53 @@ class LedgerTest @Autowired constructor(
     }
 
     @Test
+    fun `an incoming payment is answered once and credited from the settlement account`() {
+        val a = newAccount()
+        val t = incoming(a, 30_00)
+
+        assertEquals(TransferStatus.ACCEPTED, ledger.answerIncomingPayment(t).status)
+        ledger.blockAccount(a)
+        assertEquals(TransferStatus.ACCEPTED, ledger.answerIncomingPayment(t).status, "the first answer stands")
+        repeat(2) { assertEquals(TransferStatus.BOOKED, ledger.creditIncomingPayment(t).status) }
+
+        assertEquals(30_00, queries.balanceOf(a)) // a blocked account still receives money it already said yes to
+        assertEquals(
+            listOf(Triple(SystemAccounts.SETTLEMENT.value, "debit", -30_00L), Triple(a.value, "credit", 30_00L)),
+            queries.postingsOfTransfer(t).map { Triple(it.accountId, it.leg, it.amountCents) },
+        )
+    }
+
+    @Test
+    fun `an incoming payment to an unknown, closed or blocked account is rejected with its reason code`() {
+        val unknown = incoming(null, 10_00)
+        val closed = newAccount().also { ledger.closeAccount(it) }
+        val blocked = newAccount().also { ledger.blockAccount(it) }
+
+        assertEquals(
+            TransferResult(TransferStatus.REJECTED, "Incorrect account number (AC01)", "AC01"),
+            ledger.answerIncomingPayment(unknown),
+        )
+        assertEquals("AC04", ledger.answerIncomingPayment(incoming(closed, 10_00)).reasonCode)
+        assertEquals("AC06", ledger.answerIncomingPayment(incoming(blocked, 10_00)).reasonCode)
+        assertEquals("AC01", transfers.find(unknown)?.reasonCode)
+        assertThrows<IllegalTransferState> { ledger.creditIncomingPayment(unknown) }
+    }
+
+    @Test
+    fun `an incoming payment the account can no longer take is investigated, not lost`() {
+        val a = newAccount()
+        val t = incoming(a, 10_00)
+        ledger.answerIncomingPayment(t)
+        ledger.closeAccount(a) // in the seconds between the answer and the settlement
+
+        val result = ledger.creditIncomingPayment(t)
+
+        assertEquals(TransferStatus.UNDER_INVESTIGATION, result.status)
+        assertEquals("Not credited: Account is closed", result.reason)
+        assertEquals(emptyList(), queries.postingsOfTransfer(t))
+    }
+
+    @Test
     fun `an account with a remaining balance cannot be closed`() {
         val a = fundedAccount(5_00)
         assertEquals(BookingResult.rejected("Balance must be zero before closing"), ledger.closeAccount(a))
@@ -367,6 +414,12 @@ class LedgerTest @Autowired constructor(
     private val TransferResult.booked get() = status != TransferStatus.REJECTED
 
     private fun newTransfer() = TransferId(UUID.randomUUID())
+
+    private fun incoming(creditor: AccountId?, cents: Long): TransferId {
+        val t = newTransfer()
+        ledger.receiveTransfer(TransferDetails(t.value, TransferKind.INCOMING, SystemAccounts.SETTLEMENT.value, creditor?.value, cents))
+        return t
+    }
 
     private fun newAccount(): AccountId {
         val id = AccountId(UUID.randomUUID())

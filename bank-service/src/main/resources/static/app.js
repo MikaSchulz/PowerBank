@@ -19,6 +19,8 @@ const STATUS = {
     explain: 'The workflow waits in <code>Workflow.await()</code> for up to 3 days. Nothing runs meanwhile: Temporal keeps the open workflow and a timer, and the <strong>ledger</strong> shows the transfer as awaiting approval. The <strong>approve update</strong> (checked by a validator) lets it continue or abort. Nothing has been booked yet.' },
   APPROVED: { label: 'Approved', tone: 'info', live: true,
     explain: 'The approval is recorded in the ledger. The workflow continues with the booking.' },
+  ACCEPTED: { label: 'Accepted', tone: 'info', live: true,
+    explain: 'Incoming SEPA Instant payment: the account can receive it, so the bank answered the clearing house with <code>ACCP</code>. The workflow waits for the settlement (<code>ACSC</code>) before it credits the customer.' },
   RESERVED: { label: 'Reserved', tone: 'info', live: true,
     explain: 'SEPA Instant: the customer was debited and the amount is <strong>reserved</strong> on the clearing account. The workflow sends the <code>pacs.008</code> to the clearing house, retrying until the 10-second deadline.' },
   SENT_TO_EXTERNAL_BANK: { label: 'At clearing house', tone: 'info', live: true,
@@ -35,10 +37,19 @@ const STATUS = {
     explain: 'The transfer was rejected. <strong>Nothing was booked.</strong>' },
 };
 
+// What a status means for a payment from another bank, where it differs from an outgoing transfer.
+const INCOMING_EXPLAIN = {
+  RECEIVED: 'The clearing house forwarded a payment from another bank (<code>pacs.008</code>). The ledger checks whether the account can receive it; the answer goes back within the 10-second deadline.',
+  BOOKED: 'The clearing house confirmed the settlement (<code>ACSC</code>): the amount was credited from the <strong>settlement account</strong>.',
+  REJECTED: 'The bank answered no with a reason code, or the clearing house didn\'t settle the payment. <strong>Nothing was booked.</strong>',
+  UNDER_INVESTIGATION: 'No final status from the clearing house, or the account could no longer take the money. <strong>Nothing is credited</strong> until it is clear.',
+};
+
 const KIND_ICON = {
   INTERNAL: '<svg viewBox="0 0 24 24"><path d="M7 7h12l-3-3M17 17H5l3 3"/></svg>',
   EXTERNAL: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.5 3 14.5 0 18M12 3c-3 3.5-3 14.5 0 18"/></svg>',
   DEPOSIT: '<svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>',
+  INCOMING: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v9M8 12l4 4 4-4"/></svg>',
 };
 const CHECK = '<svg viewBox="0 0 24 24"><path d="m5 12 5 5 9-10"/></svg>';
 const CROSS = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>';
@@ -366,6 +377,7 @@ function transferChip(status) {
 function route(t) {
   if (t.kind === 'DEPOSIT') return `Cash deposit → ${label(t.creditorAccountId)}`;
   if (t.kind === 'EXTERNAL') return `${label(t.debtorAccountId)} → External bank`;
+  if (t.kind === 'INCOMING') return `External bank → ${t.creditorAccountId ? label(t.creditorAccountId) : 'unknown account'}`;
   if (!t.kind) return `Transfer ${short(t.transferId)}`;
   return `${label(t.debtorAccountId)} → ${label(t.creditorAccountId)}`;
 }
@@ -483,9 +495,11 @@ function transferDetails(id) {
   const t = { ...cached, ...(live ? { status: live.status, reason: live.reason } : {}) };
   if (!t.amountCents && live?.amountCents) t.amountCents = live.amountCents;
   if (!t.kind && live) t.kind = live.external ? 'EXTERNAL' : 'INTERNAL';
-  const info = STATUS[t.status] || { label: t.status || 'Loading…', explain: '' };
+  const status = STATUS[t.status] || { label: t.status || 'Loading…', explain: '' };
+  const info = t.kind === 'INCOMING' && INCOMING_EXPLAIN[t.status] ? { ...status, explain: INCOMING_EXPLAIN[t.status] } : status;
   const postings = state.drawerData?.postings || [];
-  const temporalLink = `${TEMPORAL_UI}/namespaces/${encodeURIComponent(TEMPORAL_NAMESPACE)}/workflows?query=${encodeURIComponent(`WorkflowId="transfer-${id}"`)}`;
+  const workflowId = t.kind === 'INCOMING' ? `incoming-payment-${id}` : `transfer-${id}`;
+  const temporalLink = `${TEMPORAL_UI}/namespaces/${encodeURIComponent(TEMPORAL_NAMESPACE)}/workflows?query=${encodeURIComponent(`WorkflowId="${workflowId}"`)}`;
   const traceId = t.traceId || state.traceIds.get(id);
 
   return `
@@ -512,7 +526,7 @@ function transferDetails(id) {
       <h3>Details</h3>
       <dl class="d-grid">
         <dt>Transfer ID</dt><dd class="mono">${esc(id)}</dd>
-        <dt>Workflow ID</dt><dd class="mono">transfer-${esc(id)}</dd>
+        <dt>Workflow ID</dt><dd class="mono">${esc(workflowId)}</dd>
         <dt>Trace ID</dt><dd class="mono">${traceId ? esc(traceId) : '<span class="muted">not recorded</span>'}</dd>
         ${t.createdAt ? `<dt>Created</dt><dd>${esc(new Date(t.createdAt).toLocaleString())}</dd>` : ''}
       </dl>
@@ -527,6 +541,7 @@ function transferDetails(id) {
 }
 
 function stepper(t, history) {
+  if (t.kind === 'INCOMING') return incomingStepper(t, history);
   const external = t.kind === 'EXTERNAL';
   const withApproval = t.status === 'AWAITING_APPROVAL' || history.some((h) => h.status === 'AWAITING_APPROVAL');
   const steps = [{ key: 'received', label: 'Received' }];
@@ -558,6 +573,28 @@ function stepper(t, history) {
     default: break;
   }
 
+  return `<div class="stepper">${steps.map((s, i) => `
+    <div class="step ${s.state}">
+      <span class="bullet">${s.state === 'done' ? CHECK : s.state === 'fail' ? CROSS : i + 1}</span>
+      <span>${esc(s.label)}</span>
+    </div>`).join('')}</div>`;
+}
+
+/** A payment from another bank: received → answered → credited once the clearing house settles it. */
+function incomingStepper(t, history) {
+  const accepted = t.status === 'ACCEPTED' || history.some((h) => h.status === 'ACCEPTED');
+  const steps = [{ key: 'received', label: 'Received' }, { key: 'answer', label: 'Answer' }, { key: 'final', label: 'Credited' }];
+  const states = {
+    RECEIVED: ['current', 'todo', 'todo'],
+    ACCEPTED: ['done', 'done', 'current'],
+    UNDER_INVESTIGATION: ['done', 'done', 'current'],
+    BOOKED: ['done', 'done', 'done'],
+    REJECTED: accepted ? ['done', 'done', 'fail'] : ['done', 'fail', 'todo'],
+  }[t.status] || ['todo', 'todo', 'todo'];
+  steps.forEach((s, i) => { s.state = states[i]; });
+  if (accepted) steps[1].label = 'Accepted';
+  if (t.status === 'REJECTED') (accepted ? steps[2] : steps[1]).label = 'Rejected';
+  if (t.status === 'UNDER_INVESTIGATION') steps[2].label = 'Under investigation';
   return `<div class="stepper">${steps.map((s, i) => `
     <div class="step ${s.state}">
       <span class="bullet">${s.state === 'done' ? CHECK : s.state === 'fail' ? CROSS : i + 1}</span>

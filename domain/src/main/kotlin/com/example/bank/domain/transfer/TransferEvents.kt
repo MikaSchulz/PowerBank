@@ -17,6 +17,9 @@ sealed interface TransferStatusChanged : TransferEvent {
 
     /** Why it is waiting, rejected or refunded, or the approver's comment; null otherwise. */
     val reason: String?
+
+    /** The ISO 20022 reason code the bank answered with (rejected incoming payments); null otherwise. */
+    val reasonCode: String? get() = null
 }
 
 data class TransferReceived(
@@ -76,8 +79,17 @@ data class TransferRefunded(override val transferId: TransferId, override val re
     override val status get() = TransferStatus.REFUNDED
 }
 
-data class TransferRejected(override val transferId: TransferId, override val reason: String) : TransferStatusChanged {
+data class TransferRejected(
+    override val transferId: TransferId,
+    override val reason: String,
+    override val reasonCode: String? = null,
+) : TransferStatusChanged {
     override val status get() = TransferStatus.REJECTED
+}
+
+data class IncomingPaymentAccepted(override val transferId: TransferId) : TransferStatusChanged {
+    override val status get() = TransferStatus.ACCEPTED
+    override val reason: String? get() = null
 }
 
 /** The command is not allowed in the transfer's current status. Never stored; only returned to the caller. */

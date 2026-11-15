@@ -10,6 +10,9 @@ object BankSpans {
     const val TRANSFER_ID = "bank.transfer.id"
     const val TRANSFER_KIND = "bank.transfer.kind"
 
+    /** The payment's UETR in the messages with the clearing house; for the bank's own transfers, the transfer ID. */
+    const val UETR = "bank.payment.uetr"
+
     /** The account a ledger command works on (one per `bank.account.command` span). */
     const val ACCOUNT_ID = "bank.account.id"
 

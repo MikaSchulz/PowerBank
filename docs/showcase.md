@@ -32,9 +32,8 @@ Don't run it next to `./gradlew :bank-service:bootRun`: both use port 8080.
 About one action every second or two, through the same REST API the UI uses:
 
 - **Accounts:** opens six accounts with deposits.
-- **Everyday traffic:** internal transfers and deposits. No transfers to other banks for now: they go through the
-  clearing house (which the showcase starts too), and until bank B answers payments (#60) every one would be
-  rejected. They come back with #62.
+- **Everyday traffic:** internal transfers and deposits. No transfers to other banks yet: they need bank B next to the
+  clearing house (which the showcase starts too); both come to the showcase with #62.
 - **Approvals:** now and then a transfer above the approval limit. The generator approves or denies it 5 to 20 seconds later; 7 out of 10 get approved.
 - **Bursts:** sometimes 10 concurrent transfers between the same two accounts, to show the row locks at work.
 

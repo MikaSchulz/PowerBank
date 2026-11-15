@@ -9,6 +9,7 @@ import com.example.bank.domain.account.Account
 import com.example.bank.domain.account.AccountCommand
 import com.example.bank.domain.account.AccountEvent
 import com.example.bank.domain.account.AccountKind
+import com.example.bank.domain.account.AccountStatus
 import com.example.bank.domain.account.BlockAccount
 import com.example.bank.domain.account.CloseAccount
 import com.example.bank.domain.account.Credit
@@ -18,12 +19,15 @@ import com.example.bank.domain.account.Rejection
 import com.example.bank.domain.account.ReverseCredit
 import com.example.bank.domain.account.ReverseDebit
 import com.example.bank.domain.account.UnblockAccount
+import com.example.bank.domain.transfer.AcceptIncomingPayment
 import com.example.bank.domain.transfer.AmountReserved
 import com.example.bank.domain.transfer.Approve
 import com.example.bank.domain.transfer.BookTransfer
 import com.example.bank.domain.transfer.CompleteTransfer
 import com.example.bank.domain.transfer.DenyApproval
 import com.example.bank.domain.transfer.ExpireApproval
+import com.example.bank.domain.transfer.IncomingPaymentPolicy
+import com.example.bank.domain.transfer.IncomingRejection
 import com.example.bank.domain.transfer.ReceiveTransfer
 import com.example.bank.domain.transfer.RefundTransfer
 import com.example.bank.domain.transfer.RejectTransfer
@@ -42,6 +46,7 @@ import com.example.bank.domain.transfer.TransferRefunded
 import com.example.bank.domain.transfer.TransferSettled
 import com.example.bank.domain.transfer.TransferStatus
 import com.example.bank.observability.BankSpans
+import com.example.payments.messages.ReasonCodes
 import com.fraktalio.fmodel.application.EventSourcingAggregate
 import com.fraktalio.fmodel.application.handle
 import io.micrometer.observation.Observation
@@ -62,8 +67,11 @@ data class BookingResult(val booked: Boolean, val reason: String? = null) {
     }
 }
 
-/** A transfer's business status after a ledger operation, as the transfer decider decided it. */
-data class TransferResult(val status: TransferStatus, val reason: String? = null)
+/**
+ * A transfer's business status after a ledger operation, as the transfer decider decided it. [reasonCode]: the ISO
+ * 20022 code a rejected incoming payment is answered with.
+ */
+data class TransferResult(val status: TransferStatus, val reason: String? = null, val reasonCode: String? = null)
 
 /**
  * The ledger: every method is exactly one database transaction.
@@ -171,6 +179,62 @@ class Ledger(
     fun startInvestigation(transferId: TransferId, reason: String) = changeTransfer(StartInvestigation(transferId, reason))
 
     /**
+     * Incoming payment: can the creditor account receive it ([IncomingPaymentPolicy])? Accepted, or rejected with its
+     * ISO 20022 reason code; decided once and recorded before the bank answers the clearing house. A repeated call
+     * returns the first answer, even if the account changed in between.
+     */
+    fun answerIncomingPayment(transferId: TransferId): TransferResult = inTransaction {
+        jdbc.sql("SELECT id FROM transfers WHERE id = :id FOR UPDATE").param("id", transferId.value).query().listOfRows()
+        val record = transfers.find(transferId) ?: error("Transfer $transferId does not exist")
+        if (record.status != TransferStatus.RECEIVED) return@inTransaction current(transferId)
+        val (status, kind) = record.details?.creditorAccountId?.let { accountState(AccountId(it)) } ?: (null to null)
+        val command = when (val rejection = IncomingPaymentPolicy.check(status, kind)) {
+            null -> AcceptIncomingPayment(transferId)
+            else -> rejection.reasonCode.let { RejectTransfer(transferId, ReasonCodes.describe(it), it) }
+        }
+        handleTransfer(command).failIfRejected(transferId)
+        current(transferId)
+    }
+
+    /**
+     * The clearing house settled an incoming payment (ACSC): settlement account → customer. If the account can't take
+     * it any more (closed in the seconds since the answer), nothing is booked and the payment goes under investigation:
+     * the money is at the bank already and has to go back (#63) instead of disappearing.
+     */
+    fun creditIncomingPayment(transferId: TransferId): TransferResult = try {
+        inTransaction {
+            val events = handleTransfer(BookTransfer(transferId)).failIfRejected(transferId)
+            if (events.any { it is TransferBooked }) {
+                val details = checkNotNull(transfers.find(transferId)?.details) { "Transfer $transferId has no details" }
+                val creditor = AccountId(checkNotNull(details.creditorAccountId) { "Transfer $transferId has no creditor" })
+                lockInOrder(SystemAccounts.SETTLEMENT, creditor)
+                handle(Debit(SystemAccounts.SETTLEMENT, transferId, details.amountCents)).rejection()?.let {
+                    throw BookingRejected(it.reason)
+                }
+                handle(Credit(creditor, transferId, details.amountCents)).rejection()?.let { throw BookingRejected(it.reason) }
+            }
+            current(transferId)
+        }
+    } catch (e: BookingRejected) {
+        inTransaction {
+            handleTransfer(StartInvestigation(transferId, "Not credited: ${e.reason}")).failIfRejected(transferId)
+            current(transferId)
+        }
+    }
+
+    private fun accountState(id: AccountId): Pair<AccountStatus, AccountKind>? =
+        jdbc.sql("SELECT status, kind FROM accounts WHERE id = :id").param("id", id.value)
+            .query { rs, _ -> AccountStatus.valueOf(rs.getString("status")) to AccountKind.valueOf(rs.getString("kind")) }
+            .optional().orElse(null)
+
+    private val IncomingRejection.reasonCode
+        get() = when (this) {
+            IncomingRejection.UNKNOWN_ACCOUNT -> ReasonCodes.INCORRECT_ACCOUNT
+            IncomingRejection.ACCOUNT_CLOSED -> ReasonCodes.CLOSED_ACCOUNT
+            IncomingRejection.ACCOUNT_BLOCKED -> ReasonCodes.BLOCKED_ACCOUNT
+        }
+
+    /**
      * Transfers started before SEPA Instant (simulated external bank): reserve and send in one step. Each part is
      * idempotent, so a retry after either of them is safe.
      */
@@ -239,7 +303,7 @@ class Ledger(
 
     private fun current(id: TransferId): TransferResult {
         val record = transfers.find(id) ?: error("Transfer $id does not exist")
-        return TransferResult(record.status, record.reason)
+        return TransferResult(record.status, record.reason, record.reasonCode)
     }
 
     private fun accountCommand(command: AccountCommand): BookingResult = inTransaction {

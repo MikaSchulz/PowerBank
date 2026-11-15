@@ -48,5 +48,11 @@ data class RefundTransfer(override val transferId: TransferId, val reason: Strin
 /** No final status from the clearing house: the amount stays reserved until there is one. */
 data class StartInvestigation(override val transferId: TransferId, val reason: String) : TransferCommand
 
-/** Rejected before anything was booked, e.g. insufficient funds. */
-data class RejectTransfer(override val transferId: TransferId, val reason: String) : TransferCommand
+/**
+ * Rejected before anything was booked, e.g. insufficient funds. [reasonCode]: the ISO 20022 reason code, when the
+ * rejection is answered to the clearing house (incoming payments).
+ */
+data class RejectTransfer(override val transferId: TransferId, val reason: String, val reasonCode: String? = null) : TransferCommand
+
+/** Incoming payment: the creditor account can receive it (see [IncomingPaymentPolicy]); the bank answers yes. */
+data class AcceptIncomingPayment(override val transferId: TransferId) : TransferCommand

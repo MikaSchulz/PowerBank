@@ -1,5 +1,6 @@
 package com.example.bank.domain.transfer
 
+import com.example.bank.domain.transfer.TransferStatus.ACCEPTED
 import com.example.bank.domain.transfer.TransferStatus.APPROVED
 import com.example.bank.domain.transfer.TransferStatus.AWAITING_APPROVAL
 import com.example.bank.domain.transfer.TransferStatus.BOOKED
@@ -69,6 +70,12 @@ internal fun decide(c: TransferCommand, s: Transfer): Flow<TransferEvent> {
 
         is BookTransfer -> when {
             s.kind == TransferKind.EXTERNAL -> reject(c, "External transfers are sent to the external bank, not booked")
+            // Incoming: credited only once the clearing house settled it, also after an investigation.
+            s.kind == TransferKind.INCOMING -> when (s.status) {
+                ACCEPTED, UNDER_INVESTIGATION -> flowOf(TransferBooked(c.transferId))
+                BOOKED -> emptyFlow()
+                else -> notAllowed(c, s, "booked")
+            }
             s.status == BOOKED -> emptyFlow()
             s.status == AWAITING_APPROVAL -> reject(c, "Transfer is awaiting approval")
             s.status in OPEN && s.creditorAccountId == s.debtorAccountId ->
@@ -78,7 +85,8 @@ internal fun decide(c: TransferCommand, s: Transfer): Flow<TransferEvent> {
         }
 
         is ReserveAmount -> when {
-            s.kind == TransferKind.INTERNAL || s.kind == TransferKind.DEPOSIT -> reject(c, "Only external transfers go to an external bank")
+            s.kind == TransferKind.INTERNAL || s.kind == TransferKind.DEPOSIT || s.kind == TransferKind.INCOMING ->
+                reject(c, "Only external transfers go to an external bank")
             s.status == AWAITING_APPROVAL -> reject(c, "Transfer is awaiting approval")
             s.status in OPEN -> flowOf(AmountReserved(c.transferId))
             s.status in AMOUNT_RESERVED || s.status == COMPLETED || s.status == REFUNDED -> emptyFlow() // reserved before
@@ -112,15 +120,26 @@ internal fun decide(c: TransferCommand, s: Transfer): Flow<TransferEvent> {
         }
 
         is StartInvestigation -> when (s.status) {
-            RESERVED, SENT_TO_EXTERNAL_BANK -> flowOf(InvestigationStarted(c.transferId, c.reason))
+            RESERVED, SENT_TO_EXTERNAL_BANK, ACCEPTED -> flowOf(InvestigationStarted(c.transferId, c.reason))
             UNDER_INVESTIGATION -> emptyFlow()
             else -> notAllowed(c, s, "investigated")
         }
 
-        is RejectTransfer -> when (s.status) {
-            RECEIVED, AWAITING_APPROVAL, APPROVED -> flowOf(TransferRejected(c.transferId, c.reason))
-            REJECTED -> emptyFlow()
+        is RejectTransfer -> when {
+            s.status == RECEIVED || s.status == AWAITING_APPROVAL || s.status == APPROVED ->
+                flowOf(TransferRejected(c.transferId, c.reason, c.reasonCode))
+            // Incoming: nothing is booked before the settlement, so the clearing house's rejection still applies.
+            s.kind == TransferKind.INCOMING && (s.status == ACCEPTED || s.status == UNDER_INVESTIGATION) ->
+                flowOf(TransferRejected(c.transferId, c.reason, c.reasonCode))
+            s.status == REJECTED -> emptyFlow()
             else -> notAllowed(c, s, "rejected")
+        }
+
+        is AcceptIncomingPayment -> when {
+            s.kind != TransferKind.INCOMING -> reject(c, "Only incoming payments are accepted")
+            s.status == RECEIVED -> flowOf(IncomingPaymentAccepted(c.transferId))
+            s.status == ACCEPTED -> emptyFlow()
+            else -> notAllowed(c, s, "accepted")
         }
     }
 }

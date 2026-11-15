@@ -19,14 +19,15 @@ import java.time.Duration
 import java.util.UUID
 
 /**
- * Records histories of the transfer workflow for [TransferWorkflowReplayTest]. Runs only on request:
+ * Records histories of the transfer workflow for [WorkflowReplayTest]. Runs only on request:
  *
  * ```
- * RECORD_HISTORIES=v2 ./gradlew :bank-service:test --tests '*HistoryRecorder' --rerun
+ * RECORD_HISTORIES=v3 ./gradlew :bank-service:test --tests '*TransferWorkflowHistoryRecorder' --rerun
  * ```
  *
  * Record before changing the workflow and keep the old files: the replay test then proves that executions started
- * with the old code still run with the new one. The value of `RECORD_HISTORIES` is the prefix of the file names.
+ * with the old code still run with the new one. The value of `RECORD_HISTORIES` is the prefix of the file names; an
+ * existing file is never overwritten.
  */
 @EnabledIfEnvironmentVariable(named = "RECORD_HISTORIES", matches = "v\\d+")
 class TransferWorkflowHistoryRecorder {
@@ -99,7 +100,7 @@ class TransferWorkflowHistoryRecorder {
         record("external-under-investigation", clearing = { onInquire = { _, _ -> error("clearing house down") } }) { env, client ->
             val started = start(client, external(50_00))
             awaitStatus(started.first, TransferStatus.SENT_TO_EXTERNAL_BANK)
-            env.sleep(TransferWorkflowImpl.CONFIRMATION_TIMEOUT + TransferWorkflowImpl.INQUIRY_PERIOD + Duration.ofMinutes(2))
+            env.sleep(ClearingHouseWait.CONFIRMATION_TIMEOUT + ClearingHouseWait.INQUIRY_PERIOD + Duration.ofMinutes(2))
             awaitStatus(started.first, TransferStatus.UNDER_INVESTIGATION)
             started
         }
@@ -111,11 +112,11 @@ class TransferWorkflowHistoryRecorder {
 
     private fun record(
         name: String,
-        clearing: TransferWorkflowTest.FakeClearingHouse.() -> Unit = {},
+        clearing: FakeClearingHouse.() -> Unit = {},
         scenario: (TestWorkflowEnvironment, WorkflowClient) -> Pair<TransferWorkflow, WorkflowStub>,
     ) {
-        val risk = TransferWorkflowTest.FakeRisk()
-        val clearingHouse = TransferWorkflowTest.FakeClearingHouse().apply(clearing)
+        val risk = FakeRisk()
+        val clearingHouse = FakeClearingHouse().apply(clearing)
         if (name.startsWith("approval")) risk.reviewRequired = true
         val env = TestWorkflowEnvironment.newInstance(
             TestEnvironmentOptions.newBuilder()
@@ -125,11 +126,13 @@ class TransferWorkflowHistoryRecorder {
         env.use {
             val worker = env.newWorker(BANK_TASK_QUEUE)
             worker.registerWorkflowImplementationTypes(TransferWorkflowImpl::class.java)
-            worker.registerActivitiesImplementations(TransferWorkflowTest.FakeLedger(), risk, clearingHouse)
+            worker.registerActivitiesImplementations(FakeLedger(), risk, clearingHouse)
             env.start()
             val (_, stub) = scenario(env, env.workflowClient)
             val history = env.workflowClient.fetchHistory(checkNotNull(stub.execution).workflowId)
-            File(target, "$prefix-$name.json").writeText(history.toJson(true))
+            val file = File(target, "$prefix-$name.json")
+            check(!file.exists()) { "$file exists: old histories stay, record with a new prefix" }
+            file.writeText(history.toJson(true))
         }
     }
 

@@ -59,6 +59,10 @@ class LedgerActivitiesImpl(private val ledger: Ledger) : LedgerActivities {
         ledger.startInvestigation(it, investigation.reason)
     }
 
+    override fun answerIncomingPayment(transferId: UUID) = change(transferId) { ledger.answerIncomingPayment(it) }
+
+    override fun creditIncomingPayment(transferId: UUID) = change(transferId) { ledger.creditIncomingPayment(it) }
+
     override fun debitForExternalTransfer(debit: ExternalDebit): TransferOutcome {
         BankSpans.tag(BankSpans.DEBTOR_ACCOUNT_ID to debit.debtorAccountId)
         return change(debit.transferId) { ledger.debitForExternalTransfer(it, AccountId(debit.debtorAccountId), debit.amountCents) }
@@ -86,6 +90,6 @@ class LedgerActivitiesImpl(private val ledger: Ledger) : LedgerActivities {
             throw ApplicationFailure.newNonRetryableFailureWithCause(e.message, "IllegalTransferState", e)
         }
         log.info("Transfer {}: {}{}", transferId, result.status, result.reason?.let { " ($it)" } ?: "")
-        return TransferOutcome(TransferStatus.valueOf(result.status.name), result.reason)
+        return TransferOutcome(TransferStatus.valueOf(result.status.name), result.reason, result.reasonCode)
     }
 }
