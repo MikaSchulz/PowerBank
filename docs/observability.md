@@ -174,8 +174,8 @@ The dashboards and alert rules are provisioned from `observability/grafana` on e
 | --- | --- | --- |
 | Ledger unbalanced | a bank's `bank_ledger_sum_cents` is not 0 | critical |
 | Clearing house not reachable | more than 50 % of a bank's calls to the clearing house failed in 5 minutes (at least 5 calls), for 1 minute | warning |
-| Many interbank payments rejected | more than 30 % of a bank's payments through the clearing house failed in 10 minutes (at least 10): outgoing ones refunded, incoming ones rejected | warning |
-| Creditor bank misses the deadline | the clearing house rejected more than 30 % of the payments to a bank with `AB05` in 10 minutes (at least 5), per creditor bank | warning |
+| Many interbank payments rejected | more than 30 % of a bank's payments through the clearing house failed in 10 minutes (at least 10): outgoing ones refunded, incoming ones rejected; for 1 minute | warning |
+| Creditor bank misses the deadline | the clearing house rejected more than 30 % of the payments to a bank with `AB05` in 10 minutes (at least 5), per creditor bank, for 1 minute | warning |
 | Transfer waiting for approval for over a day | a transfer has been `AWAITING_APPROVAL` for more than 24 hours | warning |
 | External transfer stuck | a transfer has been `RESERVED` or `SENT_TO_EXTERNAL_BANK` for more than 15 minutes (the workflow investigates after 5) | warning |
 | Interbank payments under investigation | any payment of a bank `UNDER_INVESTIGATION`, outgoing or incoming: no final status from the clearing house after 5 minutes | warning |

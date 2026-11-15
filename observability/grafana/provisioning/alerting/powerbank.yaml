@@ -123,7 +123,7 @@ groups:
                 - evaluator: { type: gt, params: [0.3] }
         noDataState: OK
         execErrState: Error
-        for: 0s
+        for: 1m   # no flapping while a share hovers around the threshold
         labels:
           severity: warning
         annotations:
@@ -162,7 +162,7 @@ groups:
                 - evaluator: { type: gt, params: [0.3] }
         noDataState: OK
         execErrState: Error
-        for: 0s
+        for: 1m   # no flapping while a share hovers around the threshold
         labels:
           severity: warning
         annotations:
