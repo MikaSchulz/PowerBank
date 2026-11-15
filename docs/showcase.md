@@ -53,13 +53,13 @@ About one action every second or two, through the same REST APIs the UIs use:
 - **Bursts:** sometimes 10 concurrent transfers between the same two accounts, to show the row locks at work.
 - **Chaos at the clearing house:** after 10 minutes, the four phases below run one after another, with 15 minutes of
   normal traffic in between. Each phase sets the clearing house's chaos settings, the same ones as in operations, and
-  resets them when it is over. One round takes about 80 minutes, then it starts again.
+  resets them when it is over. One round takes about 90 minutes, then it starts again.
 
 | Phase | For | What happens | Alerts |
 | --- | --- | --- | --- |
 | Creditor banks too slow: every forward 12 s late | 4 min | the deadline passes before the creditor bank sees the payment: rejected with `AB05`, the debtor bank refunds | *Many interbank payments rejected* for both banks, *Creditor bank misses the deadline* for both bank codes |
-| Half the forwards lost | 4 min | half of the payments time out (`AB05`) | as above |
-| Bank B cut off: the clearing house can't reach it | 4 min | payments to bank B time out; bank B's own payments are settled, but their confirmation to bank B is retried until it gets through | *Creditor bank misses the deadline* for 99000002, *Many interbank payments rejected* for bank A |
+| Half the forwards lost | 8 min | half of the payments time out (`AB05`) | as above |
+| Bank B cut off: the clearing house can't reach it | 8 min | payments to bank B time out; bank B's own payments are settled, but their confirmation to bank B is retried until it gets through | *Creditor bank misses the deadline* for 99000002, *Many interbank payments rejected* for bank A |
 | Clearing house down: refuses all messages and sends none | 7 min | payments stay *Reserved* or *Accepted* without a final status; after 5 minutes they go *Under investigation* | *Clearing house not reachable* and *Interbank payments under investigation* for both banks |
 
 The alerts resolve once the phase is over and its payments have left the 10-minute windows. Payments that were
