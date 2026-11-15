@@ -58,7 +58,7 @@ About one action every second or two, through the same REST APIs the UIs use:
 | Phase | For | What happens | Alerts |
 | --- | --- | --- | --- |
 | Creditor banks too slow: every forward 12 s late | 4 min | the deadline passes before the creditor bank sees the payment: rejected with `AB05`, the debtor bank refunds | *Many interbank payments rejected* for both banks, *Creditor bank misses the deadline* for both bank codes |
-| Half the forwards lost | 8 min | half of the payments time out (`AB05`) | as above |
+| Half the forwards lost | 8 min | half of the payments time out (`AB05`); the creditor bank never sees them, so only the debtor bank counts them | *Creditor bank misses the deadline* for both bank codes; the banks' share of failed payments rises to about 25 %, below their alert's 30 % |
 | Bank B cut off: the clearing house can't reach it | 8 min | payments to bank B time out; bank B's own payments are settled, but their confirmation to bank B is retried until it gets through | *Creditor bank misses the deadline* for 99000002, *Many interbank payments rejected* for bank A |
 | Clearing house down: refuses all messages and sends none | 7 min | payments stay *Reserved* or *Accepted* without a final status; after 5 minutes they go *Under investigation* | *Clearing house not reachable* and *Interbank payments under investigation* for both banks |
 

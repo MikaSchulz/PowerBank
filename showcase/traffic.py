@@ -131,7 +131,7 @@ def chaos_phases(bank_b):
     """One phase after another, with normal traffic in between. Every phase is undone afterwards.
 
     The alerts look at 10 minutes, so a phase that fails only part of the payments has to last long enough to cross
-    their 30 %: half the forwards lost for 8 minutes is 40 % of the window.
+    their 30 %: half the forwards lost for 8 minutes is 40 % of the payments to each creditor bank in the window.
     """
     phases = [
         ("creditor banks too slow: forwards 12 s late, after the deadline (AB05)", {"forwardDelayMs": 12_000}, 4),
