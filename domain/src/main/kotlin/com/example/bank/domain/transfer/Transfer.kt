@@ -6,7 +6,10 @@ enum class TransferKind {
     /** Between two accounts of this bank: debit and credit in one transaction. */
     INTERNAL,
 
-    /** To another bank: the customer is debited, the money waits on the clearing account until the other bank answers. */
+    /**
+     * To another bank, as a SEPA Instant payment through the clearing house: the customer is debited, the amount is
+     * reserved on the clearing account until the payment's final status is known.
+     */
     EXTERNAL,
 
     /** Cash deposit: an internal transfer from the cash account. */
@@ -17,11 +20,15 @@ enum class TransferKind {
  * The business status of a transfer. Its lifecycle:
  *
  * ```
- * RECEIVED ─┬───────────────────────────────┬─→ BOOKED                      (internal, deposit)
- *           └→ AWAITING_APPROVAL → APPROVED ┴─→ SENT_TO_EXTERNAL_BANK ─┬→ COMPLETED
- *                                                                       └→ REFUNDED
+ * RECEIVED ─┬───────────────────────────────┬─→ BOOKED                                          (internal, deposit)
+ *           └→ AWAITING_APPROVAL → APPROVED ┴─→ RESERVED → SENT_TO_EXTERNAL_BANK ─┬→ COMPLETED   (external)
+ *                                                   │                │             └→ REFUNDED
+ *                                                   └────────────────┴─→ UNDER_INVESTIGATION ─→ COMPLETED or REFUNDED
  * RECEIVED, AWAITING_APPROVAL, APPROVED ─→ REJECTED (nothing booked)
  * ```
+ *
+ * An external transfer is completed or refunded only on a final status from the clearing house (or, before SEPA
+ * Instant, from the simulated external bank); without one it waits under investigation.
  */
 enum class TransferStatus(val finished: Boolean = false) {
     /** Accepted, nothing decided or booked yet. */
@@ -33,16 +40,25 @@ enum class TransferStatus(val finished: Boolean = false) {
     /** Approved, about to be booked. */
     APPROVED,
 
-    /** External transfer: the customer is debited, the money sits on the clearing account, the external bank decides. */
+    /** External transfer: the customer is debited, the amount is reserved on the clearing account, not sent yet. */
+    RESERVED,
+
+    /** External transfer: the clearing house has the payment, the creditor bank decides; the amount stays reserved. */
     SENT_TO_EXTERNAL_BANK,
+
+    /**
+     * External transfer without a final status: neither a confirmation nor a status inquiry gave a definitive answer.
+     * The amount stays reserved; the transfer keeps asking the clearing house and waits for its answer.
+     */
+    UNDER_INVESTIGATION,
 
     /** Internal transfer or deposit: debit and credit are booked. */
     BOOKED(finished = true),
 
-    /** The external bank accepted. */
+    /** The external bank accepted; with SEPA Instant, the payment is settled through the clearing house. */
     COMPLETED(finished = true),
 
-    /** The external bank rejected or stayed unreachable; the debit was booked back. */
+    /** The external bank rejected, or the payment never reached the clearing house; the debit was booked back. */
     REFUNDED(finished = true),
 
     /** Rejected before anything was booked: insufficient funds, approval denied or not given in time, … */

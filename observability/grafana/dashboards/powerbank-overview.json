@@ -1,7 +1,7 @@
 {
   "uid": "powerbank-overview",
   "title": "PowerBank overview",
-  "description": "Transfers, ledger, external bank, Temporal worker, REST API and browser in one place. Provisioned from observability/grafana/dashboards (changes in the UI are not saved to the file).",
+  "description": "Transfers, ledger, clearing house, Temporal worker, REST API and browser in one place. Provisioned from observability/grafana/dashboards (changes in the UI are not saved to the file).",
   "tags": [
     "powerbank"
   ],
@@ -157,7 +157,7 @@
       "type": "stat",
       "id": 3,
       "title": "Transfers in flight",
-      "description": "Not finished yet, by business status from the ledger: RECEIVED and APPROVED (about to be booked), AWAITING_APPROVAL (a person has to decide), SENT_TO_EXTERNAL_BANK (debited, the external bank decides).",
+      "description": "Not finished yet, by business status from the ledger: RECEIVED and APPROVED (about to be booked), AWAITING_APPROVAL (a person has to decide), RESERVED and SENT_TO_EXTERNAL_BANK (amount reserved, the clearing house decides within seconds), UNDER_INVESTIGATION (no final status from the clearing house; the amount stays reserved).",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -220,7 +220,7 @@
       "type": "stat",
       "id": 4,
       "title": "Oldest waiting transfer",
-      "description": "Per status, how long the longest-waiting transfer has been in it. An approval may take up to 3 days; SENT_TO_EXTERNAL_BANK is refunded after 10 minutes without an answer from the external bank.",
+      "description": "Per status, how long the longest-waiting transfer has been in it. An approval may take up to 3 days; an external transfer gets its final status within seconds, or goes UNDER_INVESTIGATION after 5 minutes without one.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -577,7 +577,7 @@
     {
       "type": "row",
       "id": 11,
-      "title": "External bank",
+      "title": "Clearing house (SEPA Instant)",
       "collapsed": false,
       "gridPos": {
         "x": 0,
@@ -590,8 +590,8 @@
     {
       "type": "timeseries",
       "id": 12,
-      "title": "Calls per minute by outcome",
-      "description": "bank.external-bank.call: accepted, rejected (business answer, leads to a refund) or failure (technical, Temporal retries).",
+      "title": "Messages per minute by outcome",
+      "description": "bank.clearing.call per message: pacs.008 received or refused (refused: refunded at once), pacs.028 answered with ACSC, RJCT, PDNG or unknown; failure: technical, Temporal retries.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -609,8 +609,8 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (outcome) (rate(bank_external_bank_call_milliseconds_count[$__rate_interval])) * 60",
-          "legendFormat": "{{outcome}}"
+          "expr": "sum by (message, outcome) (rate(bank_clearing_call_milliseconds_count[$__rate_interval])) * 60",
+          "legendFormat": "{{message}} · {{outcome}}"
         }
       ],
       "fieldConfig": {
@@ -690,8 +690,8 @@
     {
       "type": "timeseries",
       "id": 13,
-      "title": "Not accepted and refunded share",
-      "description": "Alerts at more than 50 % not accepted calls (5 min) and more than 30 % refunded external transfers (15 min).",
+      "title": "Failed calls and refunded share",
+      "description": "Alerts at more than 50 % failed calls to the clearing house (5 min) and more than 30 % refunded external transfers (15 min).",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -709,8 +709,8 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(rate(bank_external_bank_call_milliseconds_count{outcome!=\"accepted\"}[5m])) / sum(rate(bank_external_bank_call_milliseconds_count[5m]))",
-          "legendFormat": "calls not accepted (5m)"
+          "expr": "sum(rate(bank_clearing_call_milliseconds_count{outcome=\"failure\"}[5m])) / sum(rate(bank_clearing_call_milliseconds_count[5m]))",
+          "legendFormat": "calls failed (5m)"
         },
         {
           "refId": "B",
@@ -754,8 +754,8 @@
     {
       "type": "timeseries",
       "id": 14,
-      "title": "Call latency p95 by outcome",
-      "description": "The simulator's delay; adjust it in the UI (Simulator).",
+      "title": "Call latency p95 by message",
+      "description": "How long the clearing house takes to acknowledge a pacs.008 or answer a pacs.028. Chaos for demos: PUT /api/clearing/chaos on the clearing house.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -773,8 +773,8 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "histogram_quantile(0.95, sum by (le, outcome) (rate(bank_external_bank_call_milliseconds_bucket[$__rate_interval])))",
-          "legendFormat": "{{outcome}}"
+          "expr": "histogram_quantile(0.95, sum by (le, message) (rate(bank_clearing_call_milliseconds_bucket[$__rate_interval])))",
+          "legendFormat": "{{message}}"
         }
       ],
       "fieldConfig": {
@@ -985,7 +985,7 @@
       "type": "timeseries",
       "id": 18,
       "title": "Activity execution p95 by type",
-      "description": "Per activity type, including the external bank.",
+      "description": "Per activity type, including the calls to the clearing house.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -1039,7 +1039,7 @@
       "type": "timeseries",
       "id": 19,
       "title": "Activity failures per minute",
-      "description": "Failed attempts by activity type and exception; Temporal retries them. ExternalBankUnavailable is the simulator's technical failure.",
+      "description": "Failed attempts by activity type and exception; Temporal retries them. ClearingHouseSubmit and ClearingHouseInquire fail while the clearing house is down.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"

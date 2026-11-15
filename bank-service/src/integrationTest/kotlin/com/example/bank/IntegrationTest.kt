@@ -1,5 +1,6 @@
 package com.example.bank
 
+import com.example.bank.activities.ClearingHouseProperties
 import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.test.context.TestConfiguration
@@ -7,6 +8,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Import
 import org.springframework.test.context.ActiveProfiles
+import java.net.URI
 
 /**
  * An integration test against the local stack from compose.yaml (`docker compose up -d --wait`), in its own Postgres
@@ -29,4 +31,8 @@ class IntegrationTestConfiguration {
     /** Spring Boot adds every SpanExporter bean to its span processor; TracePropagationTest reads the spans here. */
     @Bean
     fun inMemorySpanExporter(): InMemorySpanExporter = InMemorySpanExporter.create()
+
+    /** The clearing house the bank talks to in the integration tests, at `bank.clearing.url`. */
+    @Bean(destroyMethod = "close")
+    fun fakeClearingHouse(properties: ClearingHouseProperties) = FakeClearingHouse(URI(properties.url).port)
 }

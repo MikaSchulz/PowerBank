@@ -1,5 +1,6 @@
 package com.example.bank.api
 
+import com.example.bank.FakeClearingHouse
 import com.example.bank.IntegrationTest
 import com.example.bank.domain.AccountId
 import com.example.bank.ledger.LedgerQueries
@@ -7,6 +8,8 @@ import com.example.bank.ledger.SystemAccounts
 import com.example.bank.workflow.TransferState
 import com.example.bank.workflow.TransferStatus
 import com.example.bank.workflow.transferWorkflowId
+import com.example.payments.messages.ReasonCodes
+import com.example.payments.messages.TxSts
 import com.jayway.jsonpath.JsonPath
 import io.micrometer.core.instrument.MeterRegistry
 import io.temporal.client.WorkflowClient
@@ -17,7 +20,6 @@ import org.springframework.http.MediaType
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
-import org.springframework.test.web.servlet.put
 import java.math.BigInteger
 import java.time.Duration
 import java.util.UUID
@@ -33,10 +35,14 @@ class TransferApiTest @Autowired constructor(
     private val client: WorkflowClient,
     private val queries: LedgerQueries,
     private val registry: MeterRegistry,
+    private val clearingHouse: FakeClearingHouse,
 ) {
 
     @AfterEach
-    fun `sum of all postings stays zero`() = assertEquals(0, queries.sumOfAllPostings())
+    fun `sum of all postings stays zero`() {
+        clearingHouse.reset()
+        assertEquals(0, queries.sumOfAllPostings())
+    }
 
     @Test
     fun `open accounts, deposit and transfer internally`() {
@@ -96,30 +102,46 @@ class TransferApiTest @Autowired constructor(
     }
 
     @Test
-    fun `external bank accepts and the money sits on the clearing account`() {
+    fun `an external transfer goes to the clearing house and is settled once it confirms`() {
         val alice = openAccount()
         deposit(alice, 100_00)
         val clearingBefore = balance(SystemAccounts.EXTERNAL_CLEARING.value)
+        val settlementBefore = balance(SystemAccounts.SETTLEMENT.value)
 
         val transferId = postTransfer("""{"debtorAccountId":"$alice","creditorIban":"DE89 3704 0044 0532 0130 00","amountCents":4000}""")
+        awaitStatus(transferId, "SENT_TO_EXTERNAL_BANK")
+        assertEquals(60_00, balance(alice), "reserved")
+        assertEquals(clearingBefore + 40_00, balance(SystemAccounts.EXTERNAL_CLEARING.value))
+        assertEquals("DE89370400440532013000", clearingHouse.payments.single { it.uetr == transferId }.creditorIban)
+
+        confirm(transferId, TxSts.ACSC).andExpect { status { isAccepted() } }
 
         assertEquals(TransferStatus.COMPLETED, awaitResult(transferId).status)
         assertEquals(60_00, balance(alice))
-        assertEquals(clearingBefore + 40_00, balance(SystemAccounts.EXTERNAL_CLEARING.value))
+        assertEquals(clearingBefore, balance(SystemAccounts.EXTERNAL_CLEARING.value))
+        assertEquals(settlementBefore + 40_00, balance(SystemAccounts.SETTLEMENT.value))
+        assertEquals(
+            listOf("RECEIVED", "RESERVED", "SENT_TO_EXTERNAL_BANK", "COMPLETED"),
+            read<List<String>>("/api/transfers/$transferId/history", "$[*].status"),
+        )
+        confirm(transferId, TxSts.ACSC).andExpect { status { isAccepted() } } // a repeated confirmation is fine
+        confirm(transferId, TxSts.RJCT).andExpect { status { isConflict() } } // a contradicting one is not
     }
 
     @Test
-    fun `external bank rejects and the debit is refunded`() {
+    fun `a rejection by the creditor bank refunds the reservation with a readable reason`() {
         val alice = openAccount()
         deposit(alice, 100_00)
         val clearingBefore = balance(SystemAccounts.EXTERNAL_CLEARING.value)
 
         val transferId =
             postTransfer("""{"debtorAccountId":"$alice","creditorIban":"${iban("DE", "370400440000000000")}","amountCents":4000}""")
+        awaitStatus(transferId, "SENT_TO_EXTERNAL_BANK")
+        confirm(transferId, TxSts.RJCT, ReasonCodes.CLOSED_ACCOUNT).andExpect { status { isAccepted() } }
 
         val result = awaitResult(transferId)
         assertEquals(TransferStatus.REFUNDED, result.status)
-        assertEquals("Creditor account closed", result.reason)
+        assertEquals("Account closed (AC04)", result.reason)
         assertEquals(100_00, balance(alice))
         assertEquals(clearingBefore, balance(SystemAccounts.EXTERNAL_CLEARING.value))
         assertEquals(
@@ -128,6 +150,25 @@ class TransferApiTest @Autowired constructor(
                 it.leg
             },
         )
+    }
+
+    @Test
+    fun `a payment the clearing house refuses is refunded at once`() {
+        clearingHouse.onPacs008 = { 422 } // e.g. it arrived after the deadline
+        val alice = openAccount()
+        deposit(alice, 100_00)
+
+        val transferId = postTransfer("""{"debtorAccountId":"$alice","creditorIban":"DE89370400440532013000","amountCents":4000}""")
+
+        val result = awaitResult(transferId)
+        assertEquals(TransferStatus.REFUNDED, result.status)
+        assertEquals("Refused by the clearing house (HTTP 422)", result.reason)
+        assertEquals(100_00, balance(alice))
+    }
+
+    @Test
+    fun `a confirmation for a payment the bank doesn't know is refused`() {
+        confirm(UUID.randomUUID(), TxSts.ACSC).andExpect { status { isNotFound() } }
     }
 
     @Test
@@ -283,37 +324,6 @@ class TransferApiTest @Autowired constructor(
     }
 
     @Test
-    fun `simulator settings can be changed at runtime and are validated`() {
-        val original = mvc.get("/api/simulator/external-bank").andReturn().response.contentAsString
-        try {
-            mvc.put("/api/simulator/external-bank") {
-                contentType = MediaType.APPLICATION_JSON
-                content = """{"minDelayMs":0,"maxDelayMs":0,"rejectionRate":1.0,"failureRate":0.0}"""
-            }.andExpect { status { isOk() } }
-
-            val alice = openAccount()
-            deposit(alice, 100_00)
-            val transferId = postTransfer("""{"debtorAccountId":"$alice","creditorIban":"DE89370400440532013000","amountCents":1000}""")
-            val result = awaitResult(transferId)
-            assertEquals(TransferStatus.REFUNDED, result.status)
-            assertEquals("Rejected by the creditor bank", result.reason)
-
-            mvc.put("/api/simulator/external-bank") {
-                contentType = MediaType.APPLICATION_JSON
-                content = """{"minDelayMs":0,"maxDelayMs":0,"rejectionRate":1.5,"failureRate":0.0}"""
-            }.andExpect {
-                status { isBadRequest() }
-                jsonPath("$.detail") { value("Rates must be between 0 and 1") }
-            }
-        } finally {
-            mvc.put("/api/simulator/external-bank") {
-                contentType = MediaType.APPLICATION_JSON
-                content = original
-            }
-        }
-    }
-
-    @Test
     fun `the UI is served at the root`() {
         mvc.get("/").andExpect { status { isOk() } }
         mvc.get("/app.js").andExpect { status { isOk() } }
@@ -347,6 +357,15 @@ class TransferApiTest @Autowired constructor(
             .andExpect { status { isAccepted() } }
             .andReturn().response.contentAsString
         return UUID.fromString(JsonPath.read(json, "$.transferId"))
+    }
+
+    /** What the clearing house does once the payment has its final status: a pacs.002 to the bank's inbound endpoint. */
+    private fun confirm(transferId: UUID, txSts: TxSts, reasonCode: String? = null) = mvc.post("/api/clearing/inbound/pacs002") {
+        contentType = MediaType.APPLICATION_JSON
+        content =
+            """{"msgId":"${UUID.randomUUID()}","uetr":"$transferId","txSts":"$txSts"${reasonCode?.let {
+                ""","reasonCode":"$it""""
+            } ?: ""}}"""
     }
 
     private fun awaitResult(transferId: UUID): TransferState =

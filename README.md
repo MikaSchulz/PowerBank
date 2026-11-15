@@ -11,13 +11,14 @@ OpenTelemetry with Grafana LGTM, Gradle 9.
 
 ## What it does
 
-- **Accounts and transfers:** internal transfers, transfers to an external bank as a saga with refunds, cash
-  deposits; duplicate submissions are rejected, concurrent transfers never overdraw an account.
+- **Accounts and transfers:** internal transfers, transfers to other banks as SEPA Instant payments through a clearing
+  house (ISO 20022 messages, 10-second deadline, status inquiries), cash deposits; duplicate submissions are
+  rejected, concurrent transfers never overdraw an account.
 - **Suspected fraud:** transfers above a limit wait for an approval (Temporal update) for up to 3 days.
 - **Double-entry ledger:** immutable postings; every transfer sums up to zero, enforced by the database.
 - **End-to-end telemetry:** one trace from the click in the browser through Temporal into the SQL, metrics, logs,
   dashboards and alerts for the app, the Temporal server and Postgres. No personal data in any of it.
-- **UI** to click through everything, including failure scenarios and an external bank simulator.
+- **UI** to click through everything, including failure scenarios.
 
 ## Quick start
 

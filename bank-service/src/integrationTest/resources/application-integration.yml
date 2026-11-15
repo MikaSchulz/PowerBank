@@ -24,6 +24,8 @@ management:
         enabled: false
 
 bank:
+  clearing:
+    url: http://localhost:18090   # FakeClearingHouse (IntegrationTestConfiguration)
   external-bank:
     min-delay: 0ms
     max-delay: 0ms

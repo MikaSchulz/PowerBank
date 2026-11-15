@@ -60,6 +60,8 @@ bank:
     name: PowerBank
     bic: PWRBDEFFXXX
     bank-code: "99000001"
+  clearing:
+    url: http://localhost:8090   # the clearing house (#58); in compose: http://clearing:8090
   risk:
     review-threshold-cents: 1000000          # manual approval from 10,000 €
     external-review-threshold-cents: 500000  # to external banks from 5,000 €

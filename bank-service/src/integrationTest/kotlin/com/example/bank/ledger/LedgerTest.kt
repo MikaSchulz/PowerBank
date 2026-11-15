@@ -186,6 +186,75 @@ class LedgerTest @Autowired constructor(
     }
 
     @Test
+    fun `SEPA Instant settled - reserved on the clearing account, then out through the settlement account`() {
+        val a = fundedAccount(100_00)
+        val t = newTransfer()
+
+        assertEquals(TransferStatus.RESERVED, ledger.reserveForExternalTransfer(t, a, 40_00).status)
+        assertEquals(TransferStatus.RESERVED, ledger.reserveForExternalTransfer(t, a, 40_00).status) // idempotent
+        assertEquals(60_00, queries.balanceOf(a))
+        assertEquals(TransferStatus.SENT_TO_EXTERNAL_BANK, ledger.markSentToExternalBank(t).status)
+        repeat(2) { assertEquals(TransferStatus.COMPLETED, ledger.settleExternalTransfer(t).status) }
+
+        assertThrows<IllegalTransferState> { ledger.refundExternalTransfer(t, "too late") }
+        assertEquals(
+            listOf(
+                Triple(a.value, "debit", -40_00L),
+                Triple(SystemAccounts.EXTERNAL_CLEARING.value, "credit", 40_00L),
+                Triple(SystemAccounts.EXTERNAL_CLEARING.value, "debit", -40_00L),
+                Triple(SystemAccounts.SETTLEMENT.value, "credit", 40_00L),
+            ),
+            queries.postingsOfTransfer(t).map { Triple(it.accountId, it.leg, it.amountCents) },
+        )
+        assertEquals(
+            listOf(TransferStatus.RECEIVED, TransferStatus.RESERVED, TransferStatus.SENT_TO_EXTERNAL_BANK, TransferStatus.COMPLETED),
+            transfers.history(t).map { it.status },
+        )
+    }
+
+    @Test
+    fun `SEPA Instant under investigation keeps the reservation until the refund`() {
+        val a = fundedAccount(100_00)
+        val t = newTransfer()
+        ledger.reserveForExternalTransfer(t, a, 40_00)
+        ledger.markSentToExternalBank(t)
+
+        assertEquals(TransferStatus.UNDER_INVESTIGATION, ledger.startInvestigation(t, "No final status").status)
+        assertEquals(60_00, queries.balanceOf(a))
+        assertEquals(TransferStatus.REFUNDED, ledger.refundExternalTransfer(t, "Account closed (AC04)").status)
+
+        assertEquals(100_00, queries.balanceOf(a))
+        assertEquals("Account closed (AC04)", transfers.find(t)?.reason)
+        assertEquals(listOf("debit", "credit", "refund", "refund"), queries.postingsOfTransfer(t).map { it.leg })
+    }
+
+    @Test
+    fun `SEPA Instant without sufficient funds reserves nothing`() {
+        val a = fundedAccount(10_00)
+        val t = newTransfer()
+
+        val result = ledger.reserveForExternalTransfer(t, a, 40_00)
+
+        assertEquals(TransferStatus.REJECTED, result.status)
+        assertEquals("Insufficient funds", result.reason)
+        assertEquals(emptyList(), queries.postingsOfTransfer(t))
+    }
+
+    @Test
+    fun `before SEPA Instant, the simulated external bank's debit reserves and sends in one step`() {
+        val a = fundedAccount(100_00)
+        val t = newTransfer()
+
+        repeat(2) { assertEquals(TransferStatus.SENT_TO_EXTERNAL_BANK, ledger.debitForExternalTransfer(t, a, 40_00).status) }
+
+        assertEquals(
+            listOf(TransferStatus.RECEIVED, TransferStatus.RESERVED, TransferStatus.SENT_TO_EXTERNAL_BANK),
+            transfers.history(t).map { it.status },
+        )
+        assertEquals(60_00, queries.balanceOf(a))
+    }
+
+    @Test
     fun `an account with a remaining balance cannot be closed`() {
         val a = fundedAccount(5_00)
         assertEquals(BookingResult.rejected("Balance must be zero before closing"), ledger.closeAccount(a))
@@ -294,7 +363,7 @@ class LedgerTest @Autowired constructor(
         assertThrows<Exception> { jdbc.sql("DELETE FROM transfer_events WHERE transfer_id = :t").param("t", t.value).update() }
     }
 
-    /** Money moved: booked, sent to the external bank or refunded. */
+    /** Money moved: booked, reserved for or sent to the external bank, or refunded. */
     private val TransferResult.booked get() = status != TransferStatus.REJECTED
 
     private fun newTransfer() = TransferId(UUID.randomUUID())

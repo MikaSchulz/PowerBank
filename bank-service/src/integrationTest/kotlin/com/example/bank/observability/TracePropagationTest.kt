@@ -136,7 +136,7 @@ class TracePropagationTest @Autowired constructor(
     }
 
     @Test
-    fun `the external bank call is its own span with outcome and attempt`() {
+    fun `the call to the clearing house is its own span with message, outcome and attempt`() {
         val (alice, _) = fundedAccounts()
         val traceId = newTraceId()
         val transferId = postTransfer(
@@ -144,12 +144,24 @@ class TracePropagationTest @Autowired constructor(
             traceparent = "00-$traceId-00f067aa0ba902b7-01",
             expectedTraceId = traceId,
         )
+        awaitSent(transferId)
+        mvc.post("/api/clearing/inbound/pacs002") {
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"msgId":"${UUID.randomUUID()}","uetr":"$transferId","txSts":"ACSC"}"""
+        }.andExpect { status { isAccepted() } }
         assertEquals(TransferStatus.COMPLETED, awaitResult(transferId).status)
 
-        val call = spans(traceId).single { it.name == "bank.external-bank.call" }
-        assertEquals("accepted", call.attr("outcome"))
+        val call = spans(traceId).single { it.name == "bank.clearing.call" }
+        assertEquals("pacs.008", call.attr("message"))
+        assertEquals("received", call.attr("outcome"))
         assertEquals(transferId.toString(), call.attr("bank.transfer.id"))
         assertEquals("1", call.attr("temporal.activity.attempt"))
+        assertTrue(
+            spans(traceId).any {
+                it.name.startsWith("http post") && it.parentSpanId == call.spanId
+            },
+            "the HTTP call to the clearing house",
+        )
     }
 
     @Test
@@ -176,6 +188,16 @@ class TracePropagationTest @Autowired constructor(
     }
 
     // --- helpers ---
+
+    private fun awaitSent(transferId: UUID) {
+        val deadline = System.nanoTime() + 10_000_000_000L
+        while (System.nanoTime() < deadline) {
+            val json = mvc.get("/api/transfers/$transferId").andReturn().response.contentAsString
+            if (json.isNotEmpty() && JsonPath.read<String>(json, "$.status") == "SENT_TO_EXTERNAL_BANK") return
+            Thread.sleep(50)
+        }
+        error("Transfer $transferId not sent")
+    }
 
     private fun newTraceId() = Random.nextBytes(16).joinToString("") { "%02x".format(it) }
 

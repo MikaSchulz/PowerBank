@@ -53,12 +53,15 @@ In Grafana → Explore → Tempo, with TraceQL: spans carry pseudonymous busines
 | one transfer | `{ span.bank.transfer.id = "<transfer-id>" }` or `{ span.workflowId = "transfer-<transfer-id>" }` |
 | everything that touched an account | `{ span.bank.account.id = "<account-id>" }` (ledger commands) |
 | transfers from or to an account | `{ span.bank.debtor.account.id = "<id>" \|\| span.bank.creditor.account.id = "<id>" }` |
-| rejections and failures at the external bank | `{ name = "bank.external-bank.call" && span.outcome != "accepted" }` |
+| failed calls to the clearing house | `{ name = "bank.clearing.call" && span.outcome = "failure" }` |
 | slow lock waits | `{ name = "bank.ledger.lock" && duration > 50ms }` |
 
-The account drawer in the UI links to the account's traces. The external bank call is its own span
-(`bank.external-bank.call`) with `outcome` (accepted, rejected, failure) and `temporal.activity.attempt`; its timer
-`bank_external_bank_call_milliseconds_*{outcome}` counts outcomes in Prometheus.
+The account drawer in the UI links to the account's traces. Every call to the clearing house is its own span
+(`bank.clearing.call`) with `message` (pacs.008, pacs.028), `outcome` (received or refused for a pacs.008; ACSC, RJCT,
+PDNG or unknown for a pacs.028; failure for a technical error) and `temporal.activity.attempt`; its timer
+`bank_clearing_call_milliseconds_*{message,outcome}` counts them in Prometheus. The timer
+`bank_transfer_clearing_wait{resolved_by}` measures how long an external transfer waited for its final status, and
+whether the confirmation or a status inquiry brought it.
 - Try it with curl: `-H 'traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01'`, then search for
   that trace ID in Grafana.
 
@@ -129,7 +132,7 @@ The dashboards and alert rules are provisioned from `observability/grafana` on e
 
 - Dashboard *PowerBank overview* (Dashboards → PowerBank, http://localhost:3000/d/powerbank-overview): ledger sum,
   transfers in flight and the oldest waiting one, firing alerts, finished transfers, approval wait, lock waits and
-  account commands, external bank outcomes and refund share, Temporal schedule-to-start and activity failures, REST
+  account commands, the calls to the clearing house and refund share, Temporal schedule-to-start and activity failures, REST
   API rates and latencies, browser web vitals and UI actions, and the warnings and errors from Loki. Links at the top
   open Tempo, Loki and the alert rules.
 - Alert rules (Alerting → Alert rules → folder PowerBank), evaluated every 30 seconds:
@@ -137,10 +140,11 @@ The dashboards and alert rules are provisioned from `observability/grafana` on e
 | Alert | Fires when | Severity |
 | --- | --- | --- |
 | Ledger unbalanced | `bank_ledger_sum_cents` is not 0 | critical |
-| External bank does not accept payments | more than 50 % of the calls rejected or failed in 5 minutes (at least 5 calls), for 1 minute | warning |
+| Clearing house not reachable | more than 50 % of the calls to the clearing house failed in 5 minutes (at least 5 calls), for 1 minute | warning |
 | Many external transfers refunded | more than 30 % of the finished external transfers refunded in 15 minutes (at least 5) | warning |
 | Transfer waiting for approval for over a day | a transfer has been `AWAITING_APPROVAL` for more than 24 hours | warning |
-| External transfer stuck | a transfer has been `SENT_TO_EXTERNAL_BANK` for more than 15 minutes (the workflow refunds after 10) | warning |
+| External transfer stuck | a transfer has been `RESERVED` or `SENT_TO_EXTERNAL_BANK` for more than 15 minutes (the workflow investigates after 5) | warning |
+| External transfer under investigation | any transfer `UNDER_INVESTIGATION`: no final status from the clearing house, the amount stays reserved | warning |
 | Transfer stuck before booking | a transfer has been `RECEIVED` or `APPROVED` for more than 15 minutes | warning |
 | Temporal workers can't keep up | schedule-to-start p95 of workflow tasks or activities above 1 second for 2 minutes | warning |
 | REST API returns server errors | any 5xx response in 5 minutes | warning |
@@ -154,7 +158,8 @@ The dashboards and alert rules are provisioned from `observability/grafana` on e
 
 - No data (the bank-service isn't running, no traffic) counts as OK. Notifications aren't configured yet: firing
   alerts are visible in Grafana and on the dashboard.
-- Try it: the simulator preset *Chaos* plus a few external transfers fires the external bank alerts.
+- Try it: stop the clearing house and send a few external transfers: "Clearing house not reachable" fires, and after
+  5 minutes "External transfer under investigation".
 - Changing them: Grafana re-reads the dashboard JSON every 10 seconds, but doesn't save changes made in the UI to
   the file. Edit in the UI, export the JSON (*Export → Export as JSON*) and replace
   `observability/grafana/dashboards/powerbank-overview.json`. Alert rules are read at startup:

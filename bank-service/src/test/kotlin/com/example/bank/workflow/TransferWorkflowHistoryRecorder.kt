@@ -1,7 +1,11 @@
 package com.example.bank.workflow
 
-import com.example.bank.activities.ExternalBankAnswer
+import com.example.bank.activities.StatusReport
+import com.example.bank.activities.Submission
 import com.example.bank.config.TemporalConfig
+import com.example.payments.messages.Pacs002
+import com.example.payments.messages.ReasonCodes
+import com.example.payments.messages.TxSts
 import io.temporal.client.WorkflowClient
 import io.temporal.client.WorkflowClientOptions
 import io.temporal.client.WorkflowOptions
@@ -54,23 +58,64 @@ class TransferWorkflowHistoryRecorder {
             awaitStatus(started.first, TransferStatus.AWAITING_APPROVAL)
             started
         }
-        record("external-completed-after-retries", bankFailures = 2) { _, client -> finish(start(client, external(50_00))) }
-        record("external-refunded", answer = ExternalBankAnswer(accepted = false, reason = "Creditor account closed")) { _, client ->
+        record("external-settled") { _, client ->
+            val started = start(client, external(50_00))
+            awaitStatus(started.first, TransferStatus.SENT_TO_EXTERNAL_BANK)
+            started.first.confirm(Pacs002(UUID.randomUUID(), started.first.status().transferId, TxSts.ACSC))
+            finish(started)
+        }
+        record("external-rejected") { _, client ->
+            val started = start(client, external(50_00))
+            awaitStatus(started.first, TransferStatus.SENT_TO_EXTERNAL_BANK)
+            started.first.confirm(Pacs002(UUID.randomUUID(), started.first.status().transferId, TxSts.RJCT, ReasonCodes.CLOSED_ACCOUNT))
+            finish(started)
+        }
+        record("external-refused", clearing = { onSubmit = { Submission(received = false, reason = "Refused (HTTP 422)") } }) { _, client ->
             finish(start(client, external(50_00)))
+        }
+        record("external-settled-after-inquiry", clearing = {
+            onInquire = { id, n ->
+                StatusReport(
+                    if (n <
+                        3
+                    ) {
+                        pending(id)
+                    } else {
+                        settled(id)
+                    },
+                )
+            }
+        }) { _, client ->
+            finish(start(client, external(50_00)))
+        }
+        record(
+            "external-not-received",
+            clearing = {
+                onSubmit = { error("clearing house unreachable") }
+                onInquire = { _, _ -> StatusReport(status = null) }
+            },
+        ) { _, client -> finish(start(client, external(50_00))) }
+        // Still running: under investigation, like an execution that is waiting during a deployment.
+        record("external-under-investigation", clearing = { onInquire = { _, _ -> error("clearing house down") } }) { env, client ->
+            val started = start(client, external(50_00))
+            awaitStatus(started.first, TransferStatus.SENT_TO_EXTERNAL_BANK)
+            env.sleep(TransferWorkflowImpl.CONFIRMATION_TIMEOUT + TransferWorkflowImpl.INQUIRY_PERIOD + Duration.ofMinutes(2))
+            awaitStatus(started.first, TransferStatus.UNDER_INVESTIGATION)
+            started
         }
     }
 
+    private fun pending(id: UUID) = Pacs002(UUID.randomUUID(), id, TxSts.PDNG)
+
+    private fun settled(id: UUID) = Pacs002(UUID.randomUUID(), id, TxSts.ACSC)
+
     private fun record(
         name: String,
-        bankFailures: Int = 0,
-        answer: ExternalBankAnswer = ExternalBankAnswer(accepted = true),
+        clearing: TransferWorkflowTest.FakeClearingHouse.() -> Unit = {},
         scenario: (TestWorkflowEnvironment, WorkflowClient) -> Pair<TransferWorkflow, WorkflowStub>,
     ) {
         val risk = TransferWorkflowTest.FakeRisk()
-        val bank = TransferWorkflowTest.FakeExternalBank().apply {
-            failuresBeforeSuccess = bankFailures
-            this.answer = answer
-        }
+        val clearingHouse = TransferWorkflowTest.FakeClearingHouse().apply(clearing)
         if (name.startsWith("approval")) risk.reviewRequired = true
         val env = TestWorkflowEnvironment.newInstance(
             TestEnvironmentOptions.newBuilder()
@@ -80,7 +125,7 @@ class TransferWorkflowHistoryRecorder {
         env.use {
             val worker = env.newWorker(BANK_TASK_QUEUE)
             worker.registerWorkflowImplementationTypes(TransferWorkflowImpl::class.java)
-            worker.registerActivitiesImplementations(TransferWorkflowTest.FakeLedger(), risk, bank)
+            worker.registerActivitiesImplementations(TransferWorkflowTest.FakeLedger(), risk, clearingHouse)
             env.start()
             val (_, stub) = scenario(env, env.workflowClient)
             val history = env.workflowClient.fetchHistory(checkNotNull(stub.execution).workflowId)

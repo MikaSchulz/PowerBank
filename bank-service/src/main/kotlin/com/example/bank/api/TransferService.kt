@@ -16,12 +16,16 @@ import com.example.bank.workflow.TransferRequest
 import com.example.bank.workflow.TransferState
 import com.example.bank.workflow.TransferWorkflow
 import com.example.bank.workflow.transferWorkflowId
+import com.example.payments.messages.Pacs002
+import com.example.payments.messages.TxSts
 import io.opentelemetry.api.trace.Span
 import io.temporal.api.enums.v1.WorkflowIdReusePolicy
 import io.temporal.client.WorkflowClient
 import io.temporal.client.WorkflowExecutionAlreadyStarted
 import io.temporal.client.WorkflowNotFoundException
 import io.temporal.client.WorkflowOptions
+import io.temporal.client.WorkflowUpdateException
+import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import java.time.Instant
 import java.util.UUID
@@ -52,6 +56,8 @@ class TransferService(
     private val ledger: Ledger,
     private val records: TransferRecords,
 ) {
+
+    private val log = LoggerFactory.getLogger(javaClass)
 
     /**
      * Receives the transfer in the ledger and starts the workflow. The transfer ID is the workflow ID: a second start
@@ -132,6 +138,32 @@ class TransferService(
         // Completed workflows don't accept updates either.
         val state = status(transferId) ?: throw e
         throw ConflictException("Transfer is not awaiting approval (status ${state.status})")
+    }
+
+    /**
+     * The clearing house's final status of a payment this bank sent, handed to the transfer's workflow as an update.
+     * The UETR is the transfer ID. A repeated confirmation of a transfer that already has this final status is fine;
+     * one that contradicts it, or that nobody expects, is refused.
+     */
+    fun confirm(confirmation: Pacs002) {
+        BankSpans.tag(BankSpans.TRANSFER_ID to confirmation.uetr)
+        val id = TransferId(confirmation.uetr)
+        records.find(id) ?: throw NotFoundException("No payment with this UETR")
+        try {
+            stub(confirmation.uetr).confirm(confirmation)
+        } catch (e: WorkflowUpdateException) {
+            alreadyConfirmed(id, confirmation, e)
+        } catch (e: WorkflowNotFoundException) { // completed workflows don't accept updates
+            alreadyConfirmed(id, confirmation, e)
+        }
+    }
+
+    private fun alreadyConfirmed(id: TransferId, confirmation: Pacs002, cause: RuntimeException) {
+        val status = records.find(id)?.status
+        val expected = if (confirmation.txSts == TxSts.ACSC) TransferStatus.COMPLETED else TransferStatus.REFUNDED
+        if (status == expected) return
+        log.warn("Transfer {}: confirmation {} not taken, transfer is {}", id, confirmation.txSts, status)
+        throw ConflictException("No confirmation expected for this payment (status $status)").apply { initCause(cause) }
     }
 
     /** The trace this request belongs to, if it is recorded (sampled). Comes from an incoming `traceparent` or a new trace. */

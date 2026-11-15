@@ -1,12 +1,13 @@
 """Demo traffic for the showcase: keeps the bank busy so the dashboards, traces and alerts have something to show.
 
-Uses only the public REST API, like the UI does: opens a few accounts, then sends internal and external transfers and
-deposits, now and then a transfer that needs an approval (approved or denied a little later) and a burst of
-concurrent transfers. Every few minutes the external bank goes into a short "chaos" phase, so its alerts fire and
-resolve again.
+Uses only the public REST API, like the UI does: opens a few accounts, then sends internal transfers and deposits, now
+and then a transfer that needs an approval (approved or denied a little later) and a burst of concurrent transfers.
+
+No transfers to other banks for now: they go through the clearing house since #59, and until bank B answers it (#60)
+every one of them would be rejected. They come back with #62, together with the clearing house's chaos settings.
 
 Standard library only; runs in the python image of the compose profile "showcase". Settings via environment:
-BANK_URL (default http://bank-service:8080), ACCOUNTS (6), PAUSE_SECONDS (1.5), CHAOS_EVERY_MINUTES (20, 0 = never).
+BANK_URL (default http://bank-service:8080), ACCOUNTS (6), PAUSE_SECONDS (1.5).
 """
 
 import concurrent.futures
@@ -22,17 +23,7 @@ import uuid
 BANK_URL = os.environ.get("BANK_URL", "http://bank-service:8080").rstrip("/")
 ACCOUNTS = int(os.environ.get("ACCOUNTS", "6"))
 PAUSE_SECONDS = float(os.environ.get("PAUSE_SECONDS", "1.5"))
-CHAOS_EVERY_MINUTES = float(os.environ.get("CHAOS_EVERY_MINUTES", "20"))
-# The first chaos phase starts 5 minutes after the start, so the dashboards show normal traffic first. It lasts 4
-# minutes: the refund alert looks at the last 15 minutes and needs that long to see more than 30 % refunds.
-CHAOS_AFTER_MINUTES = 5
-CHAOS_MINUTES = 4
-REJECTED_IBAN_SHARE = 0.05
 APPROVAL_LIMIT_CENTS = 10_000_00  # transfers from 10,000 € need an approval (bank.risk.review-threshold-cents)
-
-# Normal: about 15 % of the external transfers get refunded, well below the alert threshold of 30 %. Chaos: most do.
-DEFAULT_BANK = {"minDelayMs": 1000, "maxDelayMs": 4000, "rejectionRate": 0.1, "failureRate": 0.1}
-CHAOS_BANK = {"minDelayMs": 500, "maxDelayMs": 3000, "rejectionRate": 0.8, "failureRate": 0.15}
 
 
 def log(message):
@@ -53,16 +44,6 @@ def call(method, path, body=None):
         return 0, None
 
 
-def iban(rejected=False):
-    """A German IBAN with valid check digits. The simulator always rejects IBANs ending in 000000."""
-    account = "0" * 10 if rejected else "".join(random.choice("0123456789") for _ in range(10))
-    if not rejected and account.endswith("000000"):
-        account = account[:-1] + "1"
-    bban = "37040044" + account
-    check = 98 - int(bban + "131400") % 97  # "DE" = 13 14, then "00"
-    return f"DE{check:02d}{bban}"
-
-
 def wait_for_bank():
     while call("GET", "/api/ui-config")[0] != 200:
         log(f"waiting for {BANK_URL} …")
@@ -78,13 +59,8 @@ def open_account(deposit_cents):
     return account
 
 
-def transfer(debtor, creditor=None, external_iban=None, cents=None):
-    body = {"debtorAccountId": debtor, "amountCents": cents}
-    if external_iban:
-        body["creditorIban"] = external_iban
-    else:
-        body["creditorAccountId"] = creditor
-    status, answer = call("POST", "/api/transfers", body)
+def transfer(debtor, creditor, cents):
+    status, answer = call("POST", "/api/transfers", {"debtorAccountId": debtor, "creditorAccountId": creditor, "amountCents": cents})
     return answer["transferId"] if status == 202 else None
 
 
@@ -98,36 +74,18 @@ def decide_later(transfer_id):
     threading.Thread(target=decide, daemon=True).start()
 
 
-def set_external_bank(settings, name):
-    status, _ = call("PUT", "/api/simulator/external-bank", settings)
-    log(f"external bank: {name} ({status})")
-
-
 def main():
     wait_for_bank()
     accounts = [a for a in (open_account(random.randint(1_000, 8_000) * 100) for _ in range(ACCOUNTS)) if a]
     log(f"{len(accounts)} accounts opened")
-    set_external_bank(DEFAULT_BANK, "default")
 
     pool = concurrent.futures.ThreadPoolExecutor(max_workers=10)
-    started = time.time()
-    chaos = False
     while True:
-        if CHAOS_EVERY_MINUTES > 0:
-            minute = (time.time() - started) / 60 % CHAOS_EVERY_MINUTES
-            in_chaos = CHAOS_AFTER_MINUTES <= minute < CHAOS_AFTER_MINUTES + CHAOS_MINUTES
-            if in_chaos != chaos:
-                chaos = in_chaos
-                set_external_bank(CHAOS_BANK if chaos else DEFAULT_BANK, "chaos" if chaos else "default")
-
         debtor, creditor = random.sample(accounts, 2)
         roll = random.random()
-        if roll < 0.50:
+        if roll < 0.65:
             transfer_id = transfer(debtor, creditor, cents=random.randint(5, 300) * 100)
             log(f"internal transfer {(transfer_id or 'refused')[:8]}")
-        elif roll < 0.72:
-            transfer_id = transfer(debtor, external_iban=iban(rejected=random.random() < REJECTED_IBAN_SHARE), cents=random.randint(20, 500) * 100)
-            log(f"external transfer {(transfer_id or 'refused')[:8]}")
         elif roll < 0.85:
             call("POST", f"/api/accounts/{debtor}/deposits", {"amountCents": random.randint(50, 1_000) * 100})
             log("deposit")

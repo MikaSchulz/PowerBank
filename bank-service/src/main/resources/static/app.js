@@ -19,14 +19,18 @@ const STATUS = {
     explain: 'The workflow waits in <code>Workflow.await()</code> for up to 3 days. Nothing runs meanwhile: Temporal keeps the open workflow and a timer, and the <strong>ledger</strong> shows the transfer as awaiting approval. The <strong>approve update</strong> (checked by a validator) lets it continue or abort. Nothing has been booked yet.' },
   APPROVED: { label: 'Approved', tone: 'info', live: true,
     explain: 'The approval is recorded in the ledger. The workflow continues with the booking.' },
-  SENT_TO_EXTERNAL_BANK: { label: 'At external bank', tone: 'info', live: true,
-    explain: 'The customer was debited and the money sits on the <strong>clearing account</strong>. The external bank activity runs; technical errors are retried with backoff for up to 10 minutes.' },
+  RESERVED: { label: 'Reserved', tone: 'info', live: true,
+    explain: 'SEPA Instant: the customer was debited and the amount is <strong>reserved</strong> on the clearing account. The workflow sends the <code>pacs.008</code> to the clearing house, retrying until the 10-second deadline.' },
+  SENT_TO_EXTERNAL_BANK: { label: 'At clearing house', tone: 'info', live: true,
+    explain: 'The clearing house has the payment and the creditor bank decides within seconds. The workflow waits for the <strong>confirm update</strong> (<code>pacs.002</code>); without it, it asks with a status inquiry (<code>pacs.028</code>).' },
+  UNDER_INVESTIGATION: { label: 'Under investigation', tone: 'warn', live: true,
+    explain: 'No final status from the clearing house: neither a confirmation nor a status inquiry gave a definitive answer. The amount <strong>stays reserved</strong>; nothing is guessed. The workflow keeps asking every 10 minutes and settles or refunds on the answer.' },
   BOOKED: { label: 'Booked', tone: 'ok',
     explain: 'Debit and credit were booked in <strong>one database transaction</strong>. No saga needed.' },
   COMPLETED: { label: 'Completed', tone: 'ok',
-    explain: 'The external bank accepted the payment. The saga is complete.' },
+    explain: 'The clearing house confirmed the settlement (<code>ACSC</code>): the reserved amount went from the clearing account to the <strong>settlement account</strong>.' },
   REFUNDED: { label: 'Refunded', tone: 'warn',
-    explain: 'The external bank rejected or stayed unreachable. <strong>Compensation:</strong> the debit was booked back from the clearing account.' },
+    explain: 'Rejected with a reason code (<code>RJCT</code>), or the clearing house never received the payment. The reserved amount was booked back from the clearing account.' },
   REJECTED: { label: 'Rejected', tone: 'bad',
     explain: 'The transfer was rejected. <strong>Nothing was booked.</strong>' },
 };
@@ -108,7 +112,7 @@ function randomIban() {
   if (account.endsWith('000000')) account = account.slice(0, 9) + '1';
   return formatIban(iban('DE', '37040044' + account));
 }
-const REJECTING_IBAN = formatIban(iban('DE', '370400440000000000'));
+const REJECTING_IBAN = formatIban(iban('DE', '370400440532013000')); // a real bank code, not a participant: RC01
 
 // ---------- nicknames (browser only: the bank never sees names) ----------
 
@@ -527,7 +531,7 @@ function stepper(t, history) {
   const withApproval = t.status === 'AWAITING_APPROVAL' || history.some((h) => h.status === 'AWAITING_APPROVAL');
   const steps = [{ key: 'received', label: 'Received' }];
   if (withApproval) steps.push({ key: 'approval', label: 'Approval' });
-  if (external) steps.push({ key: 'bank', label: 'External bank' });
+  if (external) steps.push({ key: 'bank', label: 'Clearing house' });
   steps.push({ key: 'final', label: external ? 'Completed' : 'Booked' });
   steps.forEach((s) => { s.state = 'todo'; });
 
@@ -543,7 +547,8 @@ function stepper(t, history) {
     case 'RECEIVED': set('received', 'current'); break;
     case 'AWAITING_APPROVAL': doneBefore('approval'); set('approval', 'current'); break;
     case 'APPROVED': doneBefore(external ? 'bank' : 'final'); set(external ? 'bank' : 'final', 'current'); break;
-    case 'SENT_TO_EXTERNAL_BANK': doneBefore('bank'); set('bank', 'current'); break;
+    case 'RESERVED': case 'SENT_TO_EXTERNAL_BANK': doneBefore('bank'); set('bank', 'current'); break;
+    case 'UNDER_INVESTIGATION': doneBefore('bank'); set('bank', 'current', 'Under investigation'); break;
     case 'BOOKED': case 'COMPLETED': steps.forEach((s) => { s.state = 'done'; }); break;
     case 'REFUNDED': doneBefore('final'); set('final', 'fail', 'Refunded'); break;
     case 'REJECTED':
@@ -703,7 +708,7 @@ async function onSubmit(event) {
 const SCENARIO_HINTS = {
   limit: 'Sends 15.000 € (internal) or 6.000 € (external). The workflow pauses until you approve or deny it.',
   insufficient: 'Sends 1 € more than the debtor has available. The decider rejects it; nothing is booked.',
-  rejected: 'Sends to an IBAN ending in 000000. The bank rejects it and the saga refunds the debit.',
+  rejected: 'Sends to a bank that is not a participant of the clearing house. It rejects the payment (RC01) and the reserved amount is refunded.',
   duplicate: 'Sends the same transfer ID twice. The second request gets 409: the workflow ID is the idempotency key.',
   burst: 'Fires 10 transfers at once, each a quarter of the available amount. Row locks make sure only some succeed and the account never goes below its limit.',
 };
@@ -747,7 +752,7 @@ async function runScenarioSteps(name, { debtor, external, available, target, spa
     if (!r.ok) toast('Error', esc(problem(r)), 'bad');
   } else if (name === 'rejected') {
     const r = await submitTransfer('/api/transfers', { debtorAccountId: debtor.id, amountCents: 25_00, ...target() }, { span });
-    toast(r.ok ? 'Sent to a closed account' : 'Error', r.ok ? 'Watch the saga: debit → external bank → refund.' : esc(problem(r)), r.ok ? 'info' : 'bad');
+    toast(r.ok ? 'Sent to a bank outside the clearing house' : 'Error', r.ok ? 'Watch: reserve → pacs.008 → RJCT (RC01) → refund.' : esc(problem(r)), r.ok ? 'info' : 'bad');
   } else if (name === 'duplicate') {
     const body = { transferId: uuid(), debtorAccountId: debtor.id, amountCents: 1_00, ...target() };
     const first = await submitTransfer('/api/transfers', body, { span });
@@ -808,57 +813,6 @@ async function decide(id, approved, comment) {
   refresh();
 }
 
-// ---------- simulator ----------
-
-const PRESETS = {
-  friendly: { rejectionRate: 0, failureRate: 0, minDelayMs: 200, maxDelayMs: 800 },
-  default: { rejectionRate: 0.2, failureRate: 0.1, minDelayMs: 1000, maxDelayMs: 4000 },
-  chaos: { rejectionRate: 0.5, failureRate: 0.6, minDelayMs: 2000, maxDelayMs: 8000 },
-  down: { rejectionRate: 0, failureRate: 1, minDelayMs: 500, maxDelayMs: 1000 },
-};
-
-function fillSimulator(settings) {
-  const form = $('#simulator-dialog form');
-  form.rejectionRate.value = Math.round(settings.rejectionRate * 100);
-  form.failureRate.value = Math.round(settings.failureRate * 100);
-  form.minDelay.value = settings.minDelayMs / 1000;
-  form.maxDelay.value = settings.maxDelayMs / 1000;
-  updateSimulatorOutputs();
-}
-
-function updateSimulatorOutputs() {
-  const form = $('#simulator-dialog form');
-  if (Number(form.maxDelay.value) < Number(form.minDelay.value)) form.maxDelay.value = form.minDelay.value;
-  form.rejectionOut.value = `${form.rejectionRate.value} %`;
-  form.failureOut.value = `${form.failureRate.value} %`;
-  form.minOut.value = `${form.minDelay.value} s`;
-  form.maxOut.value = `${form.maxDelay.value} s`;
-}
-
-async function openSimulator() {
-  const result = await api('GET', '/api/simulator/external-bank');
-  if (!result.ok) { toast('Simulator not reachable', esc(problem(result)), 'bad'); return; }
-  fillSimulator(result.data);
-  openDialog('#simulator-dialog');
-}
-
-async function saveSimulator() {
-  const form = $('#simulator-dialog form');
-  const settings = {
-    rejectionRate: Number(form.rejectionRate.value) / 100,
-    failureRate: Number(form.failureRate.value) / 100,
-    minDelayMs: Math.round(Number(form.minDelay.value) * 1000),
-    maxDelayMs: Math.round(Number(form.maxDelay.value) * 1000),
-  };
-  const result = await traced('update simulator', {}, (span) => api('PUT', '/api/simulator/external-bank', settings, { span }));
-  if (result.ok) {
-    toast('Simulator updated',
-      `${Math.round(settings.rejectionRate * 100)} % rejections, ${Math.round(settings.failureRate * 100)} % technical failures, ${settings.minDelayMs / 1000}–${settings.maxDelayMs / 1000} s delay`, 'ok');
-  } else {
-    toast('Invalid settings', esc(problem(result)), 'bad');
-  }
-}
-
 // ---------- events ----------
 
 function bindEvents() {
@@ -880,7 +834,6 @@ function bindEvents() {
     form.reset();
     openDialog('#account-dialog');
   });
-  $('#open-simulator').addEventListener('click', openSimulator);
   $('#scrim').addEventListener('click', closeDrawer);
   document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && state.drawer && !$('dialog[open]')) closeDrawer(); });
 
@@ -913,10 +866,6 @@ function bindEvents() {
     if (dialog.returnValue === 'deny' && state.pendingDeny) decide(state.pendingDeny, false, $('form', dialog).comment.value.trim());
     state.pendingDeny = null;
   });
-  const simulatorForm = $('#simulator-dialog form');
-  simulatorForm.addEventListener('input', updateSimulatorOutputs);
-  for (const preset of $$('[data-preset]')) preset.addEventListener('click', () => fillSimulator(PRESETS[preset.dataset.preset]));
-  $('#simulator-dialog').addEventListener('close', () => { if ($('#simulator-dialog').returnValue === 'save') saveSimulator(); });
 
   // delegated clicks (re-rendered content)
   document.addEventListener('click', async (event) => {

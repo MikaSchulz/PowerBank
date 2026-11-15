@@ -10,8 +10,10 @@ plugins {
 
 dependencies {
     implementation(project(":domain"))
+    implementation(project(":payment-messages"))
 
     implementation("org.springframework.boot:spring-boot-starter-webmvc")
+    implementation("org.springframework.boot:spring-boot-starter-restclient") // to the clearing house
     implementation("org.springframework.boot:spring-boot-starter-data-jdbc")
     implementation("org.springframework.boot:spring-boot-starter-flyway")
     implementation("org.springframework.boot:spring-boot-starter-actuator")

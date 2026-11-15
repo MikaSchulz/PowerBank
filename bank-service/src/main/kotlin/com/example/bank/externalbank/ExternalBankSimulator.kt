@@ -19,7 +19,7 @@ data class ExternalBankProperties(
     val failureRate: Double = 0.1,
 )
 
-/** Simulator behavior, adjustable at runtime (e.g. from the UI). */
+/** Simulator behavior, from the configuration (`bank.external-bank.*`). */
 data class ExternalBankSettings(
     val minDelayMs: Long,
     val maxDelayMs: Long,
@@ -40,7 +40,9 @@ data class ExternalBankSettings(
 class ExternalBankUnavailable : RuntimeException("External bank unavailable (simulated)")
 
 /**
- * Simulated external bank: slow, sometimes fails technically and sometimes rejects.
+ * Simulated external bank: slow, sometimes fails technically and sometimes rejects. Only for transfers whose workflow
+ * reached its external part before SEPA Instant (#59): new ones go through the clearing house. Removed together with
+ * the workflow's old branch once no such execution is open any more.
  *
  * Like a real bank it is idempotent per transfer ID: a repeated call returns the same decision.
  * (Its memory is volatile; after a restart it decides anew.)

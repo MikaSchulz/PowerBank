@@ -30,14 +30,23 @@ data class ExpireApproval(override val transferId: TransferId) : TransferCommand
 /** Internal transfer or deposit: debit and credit are booked (in the same transaction as this command). */
 data class BookTransfer(override val transferId: TransferId) : TransferCommand
 
-/** External transfer: the customer is debited and the payment goes to the external bank. */
+/** External transfer: the customer is debited, the amount is reserved on the clearing account (same transaction). */
+data class ReserveAmount(override val transferId: TransferId) : TransferCommand
+
+/** External transfer: the payment is with the clearing house (or, before SEPA Instant, the simulated external bank). */
 data class SendToExternalBank(override val transferId: TransferId) : TransferCommand
 
-/** The external bank accepted. */
+/** The clearing house confirmed the settlement (pacs.002 ACSC): the reserved amount goes to the settlement account. */
+data class SettleTransfer(override val transferId: TransferId) : TransferCommand
+
+/** The simulated external bank accepted (transfers started before SEPA Instant). */
 data class CompleteTransfer(override val transferId: TransferId) : TransferCommand
 
-/** The external bank rejected or stayed unreachable: the debit is booked back (saga compensation). */
+/** Rejected after the reservation, or never received by the clearing house: the debit is booked back. */
 data class RefundTransfer(override val transferId: TransferId, val reason: String) : TransferCommand
+
+/** No final status from the clearing house: the amount stays reserved until there is one. */
+data class StartInvestigation(override val transferId: TransferId, val reason: String) : TransferCommand
 
 /** Rejected before anything was booked, e.g. insufficient funds. */
 data class RejectTransfer(override val transferId: TransferId, val reason: String) : TransferCommand

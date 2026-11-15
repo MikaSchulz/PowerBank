@@ -18,6 +18,7 @@ import com.example.bank.domain.account.Rejection
 import com.example.bank.domain.account.ReverseCredit
 import com.example.bank.domain.account.ReverseDebit
 import com.example.bank.domain.account.UnblockAccount
+import com.example.bank.domain.transfer.AmountReserved
 import com.example.bank.domain.transfer.Approve
 import com.example.bank.domain.transfer.BookTransfer
 import com.example.bank.domain.transfer.CompleteTransfer
@@ -27,7 +28,10 @@ import com.example.bank.domain.transfer.ReceiveTransfer
 import com.example.bank.domain.transfer.RefundTransfer
 import com.example.bank.domain.transfer.RejectTransfer
 import com.example.bank.domain.transfer.RequireApproval
+import com.example.bank.domain.transfer.ReserveAmount
 import com.example.bank.domain.transfer.SendToExternalBank
+import com.example.bank.domain.transfer.SettleTransfer
+import com.example.bank.domain.transfer.StartInvestigation
 import com.example.bank.domain.transfer.Transfer
 import com.example.bank.domain.transfer.TransferBooked
 import com.example.bank.domain.transfer.TransferCommand
@@ -35,7 +39,7 @@ import com.example.bank.domain.transfer.TransferCommandRejected
 import com.example.bank.domain.transfer.TransferEvent
 import com.example.bank.domain.transfer.TransferKind
 import com.example.bank.domain.transfer.TransferRefunded
-import com.example.bank.domain.transfer.TransferSentToExternalBank
+import com.example.bank.domain.transfer.TransferSettled
 import com.example.bank.domain.transfer.TransferStatus
 import com.example.bank.observability.BankSpans
 import com.fraktalio.fmodel.application.EventSourcingAggregate
@@ -133,21 +137,54 @@ class Ledger(
         )
     }
 
-    /** First step of the external bank saga: the customer is debited, the money sits on the clearing account. */
-    fun debitForExternalTransfer(transferId: TransferId, debtor: AccountId, amountCents: Long): TransferResult = book(
-        SendToExternalBank(transferId),
+    /**
+     * SEPA Instant, first step: the customer is debited, the amount is reserved on the clearing account until the
+     * payment's final status is known. Insufficient funds reject the transfer instead.
+     */
+    fun reserveForExternalTransfer(transferId: TransferId, debtor: AccountId, amountCents: Long): TransferResult = book(
+        ReserveAmount(transferId),
         ReceiveTransfer(transferId, TransferKind.EXTERNAL, debtor, null, amountCents),
         debtor,
         SystemAccounts.EXTERNAL_CLEARING,
         amountCents,
     )
 
-    /** The external bank accepted: saga completed successfully. Idempotent. */
+    /** The clearing house has the payment (it acknowledged the pacs.008). No money moves. Idempotent. */
+    fun markSentToExternalBank(transferId: TransferId) = changeTransfer(SendToExternalBank(transferId))
+
+    /**
+     * The clearing house confirmed the settlement (ACSC): the reserved amount goes from the clearing account to the
+     * settlement account, which mirrors the bank's account at the clearing house. Idempotent.
+     */
+    fun settleExternalTransfer(transferId: TransferId): TransferResult = inTransaction {
+        val events = handleTransfer(SettleTransfer(transferId)).failIfRejected(transferId)
+        if (events.any { it is TransferSettled }) {
+            val (_, amountCents) = debitOf(transferId)
+            lockInOrder(SystemAccounts.EXTERNAL_CLEARING, SystemAccounts.SETTLEMENT)
+            handle(Debit(SystemAccounts.EXTERNAL_CLEARING, transferId, amountCents)).failIfRejected()
+            handle(Credit(SystemAccounts.SETTLEMENT, transferId, amountCents)).failIfRejected()
+        }
+        current(transferId)
+    }
+
+    /** No final status from the clearing house: the amount stays reserved, the back office sees it. Idempotent. */
+    fun startInvestigation(transferId: TransferId, reason: String) = changeTransfer(StartInvestigation(transferId, reason))
+
+    /**
+     * Transfers started before SEPA Instant (simulated external bank): reserve and send in one step. Each part is
+     * idempotent, so a retry after either of them is safe.
+     */
+    fun debitForExternalTransfer(transferId: TransferId, debtor: AccountId, amountCents: Long): TransferResult {
+        val reserved = reserveForExternalTransfer(transferId, debtor, amountCents)
+        return if (reserved.status == TransferStatus.RESERVED) markSentToExternalBank(transferId) else reserved
+    }
+
+    /** The simulated external bank accepted (transfers started before SEPA Instant). Idempotent. */
     fun completeExternalTransfer(transferId: TransferId) = changeTransfer(CompleteTransfer(transferId))
 
     /**
-     * Compensation of the external bank saga: refund the debit. Amount and account come from the ledger,
-     * not from the workflow, because the ledger is the source of truth. Idempotent.
+     * The payment was rejected, or never reached the clearing house: refund the reserved amount. Amount and account
+     * come from the ledger, not from the workflow, because the ledger is the source of truth. Idempotent.
      */
     fun refundExternalTransfer(transferId: TransferId, reason: String): TransferResult = inTransaction {
         val events = handleTransfer(RefundTransfer(transferId, reason)).failIfRejected(transferId)
@@ -179,7 +216,7 @@ class Ledger(
             current(id).takeIf { it.status == TransferStatus.REJECTED }?.let { return@inTransaction it }
 
             val events = handleTransfer(step).failIfRejected(id)
-            if (events.any { it is TransferBooked || it is TransferSentToExternalBank }) {
+            if (events.any { it is TransferBooked || it is AmountReserved }) {
                 lockInOrder(debtor, creditor)
                 handle(Debit(debtor, id, amountCents)).rejection()?.let { throw BookingRejected(it.reason) }
                 handle(Credit(creditor, id, amountCents)).rejection()?.let { throw BookingRejected(it.reason) }
@@ -227,9 +264,11 @@ class Ledger(
             )
     }
 
+    /** The debtor's debit. (Once settled, the clearing account has a debit for the transfer too.) */
     private fun debitOf(transferId: TransferId): Pair<AccountId, Long> =
-        jdbc.sql("SELECT account_id, amount_cents FROM postings WHERE transfer_id = :id AND leg = 'debit'")
+        jdbc.sql("SELECT account_id, amount_cents FROM postings WHERE transfer_id = :id AND leg = 'debit' AND account_id <> :clearing")
             .param("id", transferId.value)
+            .param("clearing", SystemAccounts.EXTERNAL_CLEARING.value)
             .query { rs, _ -> AccountId(rs.getObject("account_id", UUID::class.java)) to -rs.getLong("amount_cents") }
             .single()
 
@@ -267,8 +306,9 @@ class Ledger(
 
     private fun List<AccountEvent>.rejection(): Rejection? = filterIsInstance<Rejection>().firstOrNull()
 
+    /** For postings that must not fail for business reasons: refunds and the settlement of a reserved amount. */
     private fun List<AccountEvent>.failIfRejected() {
-        rejection()?.let { error("Compensation rejected: ${it.reason}") }
+        rejection()?.let { error("Posting rejected: ${it.reason}") }
     }
 
     /** A step the transfer's status doesn't allow is a bug in the caller, not a business outcome. */

@@ -9,7 +9,7 @@ data class ExternalPayment(val transferId: UUID, val creditorIban: String, val a
 /** Business answer of the external bank. Technical errors are exceptions and get retried by Temporal. */
 data class ExternalBankAnswer(val accepted: Boolean, val reason: String? = null)
 
-/** Moves to the contracts module in stage 12; it will then be implemented by the Quarkus worker. */
+/** The simulated external bank: only for executions from before SEPA Instant (#59), see `ExternalBankSimulator`. */
 @ActivityInterface(namePrefix = "ExternalBank")
 interface ExternalBankActivities {
     fun submitPayment(payment: ExternalPayment): ExternalBankAnswer

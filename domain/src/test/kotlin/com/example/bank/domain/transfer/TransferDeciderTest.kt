@@ -61,9 +61,9 @@ class TransferDeciderTest {
                 .thenEvents(TransferCommandRejected(t, "Transfer is awaiting approval"))
 
         @Test
-        fun `a waiting transfer cannot be sent to the external bank`() =
+        fun `nothing is reserved for a waiting transfer`() =
             transferDecider.given(external, waiting)
-                .whenCommand(SendToExternalBank(t))
+                .whenCommand(ReserveAmount(t))
                 .thenEvents(TransferCommandRejected(t, "Transfer is awaiting approval"))
 
         @Test
@@ -130,7 +130,7 @@ class TransferDeciderTest {
         @Test
         fun `an internal transfer does not go to an external bank`() =
             transferDecider.given(internal)
-                .whenCommand(SendToExternalBank(t))
+                .whenCommand(ReserveAmount(t))
                 .thenEvents(TransferCommandRejected(t, "Only external transfers go to an external bank"))
 
         @Test
@@ -147,7 +147,124 @@ class TransferDeciderTest {
     }
 
     @Nested
-    inner class ExternalBank {
+    inner class InstantPayment {
+        private val reserved = AmountReserved(t)
+        private val sent = TransferSentToExternalBank(t)
+        private val investigating = InvestigationStarted(t, "No final status from the clearing house")
+
+        @Test
+        fun `the amount is reserved before the payment is sent`() {
+            transferDecider.given(external)
+                .whenCommand(SendToExternalBank(t))
+                .thenEvents(TransferCommandRejected(t, "Transfer in status RECEIVED cannot be sent to the external bank"))
+            transferDecider.given(external)
+                .whenCommand(ReserveAmount(t))
+                .thenEvents(reserved)
+            transferDecider.given(external, reserved)
+                .whenCommand(SendToExternalBank(t))
+                .thenEvents(sent)
+        }
+
+        @Test
+        fun `an approved transfer is reserved`() =
+            transferDecider.given(external, waiting, approved)
+                .whenCommand(ReserveAmount(t))
+                .thenEvents(reserved)
+
+        @Test
+        fun `reserving again changes nothing, also after the payment went on`() {
+            transferDecider.given(external, reserved).whenCommand(ReserveAmount(t)).thenNothing()
+            transferDecider.given(external, reserved, sent).whenCommand(ReserveAmount(t)).thenNothing()
+            transferDecider.given(external, reserved, sent, TransferSettled(t)).whenCommand(ReserveAmount(t)).thenNothing()
+        }
+
+        @Test
+        fun `settled, the transfer is completed`() =
+            transferDecider.given(external, reserved, sent)
+                .whenCommand(SettleTransfer(t))
+                .thenEvents(TransferSettled(t))
+
+        @Test
+        fun `settled although sending seemed to fail`() =
+            transferDecider.given(external, reserved)
+                .whenCommand(SettleTransfer(t))
+                .thenEvents(TransferSettled(t))
+
+        @Test
+        fun `settling twice changes nothing`() =
+            transferDecider.given(external, reserved, sent, TransferSettled(t))
+                .whenCommand(SettleTransfer(t))
+                .thenNothing()
+
+        @Test
+        fun `rejected, the reservation is refunded`() =
+            transferDecider.given(external, reserved, sent)
+                .whenCommand(RefundTransfer(t, "Account closed (AC04)"))
+                .thenEvents(TransferRefunded(t, "Account closed (AC04)"))
+
+        @Test
+        fun `never received by the clearing house, the reservation is refunded`() =
+            transferDecider.given(external, reserved)
+                .whenCommand(RefundTransfer(t, "Not received by the clearing house"))
+                .thenEvents(TransferRefunded(t, "Not received by the clearing house"))
+
+        @Test
+        fun `a settled transfer can no longer be refunded`() =
+            transferDecider.given(external, reserved, sent, TransferSettled(t))
+                .whenCommand(RefundTransfer(t, "too late"))
+                .thenEvents(TransferCommandRejected(t, "Transfer in status COMPLETED cannot be refunded"))
+
+        @Test
+        fun `a refunded transfer can no longer be settled`() =
+            transferDecider.given(external, reserved, sent, TransferRefunded(t, "rejected"))
+                .whenCommand(SettleTransfer(t))
+                .thenEvents(TransferCommandRejected(t, "Transfer in status REFUNDED cannot be settled"))
+
+        @Test
+        fun `refunding twice changes nothing`() =
+            transferDecider.given(external, reserved, sent, TransferRefunded(t, "rejected"))
+                .whenCommand(RefundTransfer(t, "rejected"))
+                .thenNothing()
+
+        @Test
+        fun `nothing is refunded that was never reserved`() =
+            transferDecider.given(external)
+                .whenCommand(RefundTransfer(t, "rejected"))
+                .thenEvents(TransferCommandRejected(t, "Transfer in status RECEIVED cannot be refunded"))
+
+        @Test
+        fun `without a final status the transfer goes under investigation`() {
+            transferDecider.given(external, reserved, sent)
+                .whenCommand(StartInvestigation(t, "No final status from the clearing house"))
+                .thenEvents(investigating)
+            transferDecider.given(external, reserved)
+                .whenCommand(StartInvestigation(t, "No final status from the clearing house"))
+                .thenEvents(investigating)
+        }
+
+        @Test
+        fun `under investigation, the final status still decides`() {
+            transferDecider.given(external, reserved, sent, investigating)
+                .whenCommand(SettleTransfer(t))
+                .thenEvents(TransferSettled(t))
+            transferDecider.given(external, reserved, sent, investigating)
+                .whenCommand(RefundTransfer(t, "Account closed (AC04)"))
+                .thenEvents(TransferRefunded(t, "Account closed (AC04)"))
+            transferDecider.given(external, reserved, sent, investigating)
+                .whenCommand(StartInvestigation(t, "again"))
+                .thenNothing()
+        }
+
+        @Test
+        fun `a finished transfer is not investigated`() =
+            transferDecider.given(external, reserved, sent, TransferSettled(t))
+                .whenCommand(StartInvestigation(t, "late"))
+                .thenEvents(TransferCommandRejected(t, "Transfer in status COMPLETED cannot be investigated"))
+    }
+
+    /** Transfers started before SEPA Instant: the simulated external bank answers, no money moves on completion. */
+    @Nested
+    inner class SimulatedExternalBank {
         private val sent = TransferSentToExternalBank(t)
 
         @Test
@@ -163,29 +280,17 @@ class TransferDeciderTest {
                 .thenEvents(TransferRefunded(t, "Creditor account closed"))
 
         @Test
-        fun `an accepted transfer can no longer be refunded`() =
-            transferDecider.given(external, sent, TransferCompleted(t))
-                .whenCommand(RefundTransfer(t, "too late"))
-                .thenEvents(TransferCommandRejected(t, "Transfer in status COMPLETED cannot be refunded"))
-
-        @Test
-        fun `refunding twice changes nothing`() =
-            transferDecider.given(external, sent, TransferRefunded(t, "rejected"))
-                .whenCommand(RefundTransfer(t, "rejected"))
-                .thenNothing()
-
-        @Test
-        fun `nothing is refunded that was never sent`() =
-            transferDecider.given(external)
-                .whenCommand(RefundTransfer(t, "rejected"))
-                .thenEvents(TransferCommandRejected(t, "Transfer in status RECEIVED cannot be refunded"))
+        fun `only a sent transfer is completed`() =
+            transferDecider.given(external, AmountReserved(t))
+                .whenCommand(CompleteTransfer(t))
+                .thenEvents(TransferCommandRejected(t, "Transfer in status RESERVED cannot be completed"))
     }
 
     @Test
     fun `the state follows the events`() {
-        val state = listOf(external, waiting, approved, TransferSentToExternalBank(t), TransferRefunded(t, "Creditor account closed"))
+        val state = listOf(external, waiting, approved, AmountReserved(t), TransferSentToExternalBank(t), TransferRefunded(t, "Closed"))
             .fold(transferDecider.initialState, transferDecider.evolve)
 
-        assertEquals(Transfer(TransferStatus.REFUNDED, TransferKind.EXTERNAL, alice, null, 50_00, "Creditor account closed"), state)
+        assertEquals(Transfer(TransferStatus.REFUNDED, TransferKind.EXTERNAL, alice, null, 50_00, "Closed"), state)
     }
 }

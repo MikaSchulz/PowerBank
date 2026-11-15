@@ -44,16 +44,34 @@ data class TransferBooked(override val transferId: TransferId) : TransferStatusC
     override val reason: String? get() = null
 }
 
+/** Money event: customer → clearing account. */
+data class AmountReserved(override val transferId: TransferId) : TransferStatusChanged {
+    override val status get() = TransferStatus.RESERVED
+    override val reason: String? get() = null
+}
+
 data class TransferSentToExternalBank(override val transferId: TransferId) : TransferStatusChanged {
     override val status get() = TransferStatus.SENT_TO_EXTERNAL_BANK
     override val reason: String? get() = null
 }
 
+data class InvestigationStarted(override val transferId: TransferId, override val reason: String) : TransferStatusChanged {
+    override val status get() = TransferStatus.UNDER_INVESTIGATION
+}
+
+/** Money event: clearing account → settlement account (the money left the bank through the clearing house). */
+data class TransferSettled(override val transferId: TransferId) : TransferStatusChanged {
+    override val status get() = TransferStatus.COMPLETED
+    override val reason: String? get() = null
+}
+
+/** The simulated external bank accepted; no money moves (transfers started before SEPA Instant). */
 data class TransferCompleted(override val transferId: TransferId) : TransferStatusChanged {
     override val status get() = TransferStatus.COMPLETED
     override val reason: String? get() = null
 }
 
+/** Money event: clearing account → customer. */
 data class TransferRefunded(override val transferId: TransferId, override val reason: String) : TransferStatusChanged {
     override val status get() = TransferStatus.REFUNDED
 }
