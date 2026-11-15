@@ -183,10 +183,10 @@
       }
     },
     {
-      "type": "stat",
+      "type": "bargauge",
       "id": 3,
       "title": "Transfers in flight",
-      "description": "Not finished yet, by business status from the ledger: RECEIVED and APPROVED (about to be booked), AWAITING_APPROVAL (a person has to decide), RESERVED and SENT_TO_EXTERNAL_BANK (amount reserved, the clearing house decides within seconds), UNDER_INVESTIGATION (no final status from the clearing house; the amount stays reserved).",
+      "description": "Not finished yet, by business status from the ledger: RECEIVED and APPROVED (about to be booked), AWAITING_APPROVAL (a person has to decide), RESERVED and SENT_TO_EXTERNAL_BANK (amount reserved, the clearing house decides within seconds), UNDER_INVESTIGATION (no final status from the clearing house; the amount stays reserved). Only statuses with transfers in them are shown.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -204,7 +204,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (service_name, status) (bank_transfers_in_flight{service_name=~\"$bank\"})",
+          "expr": "sum by (service_name, status) (bank_transfers_in_flight{service_name=~\"$bank\"}) > 0",
           "legendFormat": "{{service_name}} · {{status}}",
           "instant": true,
           "range": false
@@ -214,7 +214,8 @@
         "defaults": {
           "unit": "short",
           "color": {
-            "mode": "thresholds"
+            "mode": "fixed",
+            "fixedColor": "blue"
           },
           "thresholds": {
             "mode": "absolute",
@@ -225,7 +226,9 @@
               }
             ]
           },
-          "mappings": []
+          "mappings": [],
+          "min": 0,
+          "noValue": "none"
         },
         "overrides": []
       },
@@ -237,16 +240,23 @@
           "fields": "",
           "values": false
         },
-        "colorMode": "none",
-        "graphMode": "none",
-        "textMode": "value_and_name",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "wideLayout": true
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "valueMode": "color",
+        "namePlacement": "top",
+        "showUnfilled": true,
+        "sizing": "auto",
+        "minVizWidth": 8,
+        "minVizHeight": 10,
+        "maxVizHeight": 18,
+        "text": {
+          "titleSize": 11,
+          "valueSize": 16
+        }
       }
     },
     {
-      "type": "stat",
+      "type": "bargauge",
       "id": 4,
       "title": "Oldest waiting transfer",
       "description": "Per status, how long the longest-waiting transfer has been in it. An approval may take up to 3 days; an external transfer gets its final status within seconds, or goes UNDER_INVESTIGATION after 5 minutes without one.",
@@ -267,7 +277,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "max by (service_name, status) (bank_transfers_in_flight_age_max_seconds{service_name=~\"$bank\"})",
+          "expr": "max by (service_name, status) (bank_transfers_in_flight_age_max_seconds{service_name=~\"$bank\"}) > 0",
           "legendFormat": "{{service_name}} · {{status}}",
           "instant": true,
           "range": false
@@ -296,7 +306,9 @@
               }
             ]
           },
-          "mappings": []
+          "mappings": [],
+          "min": 0,
+          "noValue": "none"
         },
         "overrides": []
       },
@@ -308,12 +320,19 @@
           "fields": "",
           "values": false
         },
-        "colorMode": "value",
-        "graphMode": "none",
-        "textMode": "value_and_name",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "wideLayout": true
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "valueMode": "color",
+        "namePlacement": "top",
+        "showUnfilled": true,
+        "sizing": "auto",
+        "minVizWidth": 8,
+        "minVizHeight": 10,
+        "maxVizHeight": 18,
+        "text": {
+          "titleSize": 11,
+          "valueSize": 16
+        }
       }
     },
     {
