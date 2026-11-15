@@ -3,8 +3,8 @@
 Uses only the public REST API, like the UI does: opens a few accounts, then sends internal transfers and deposits, now
 and then a transfer that needs an approval (approved or denied a little later) and a burst of concurrent transfers.
 
-No transfers to other banks for now: they go through the clearing house since #59, and until bank B answers it (#60)
-every one of them would be rejected. They come back with #62, together with the clearing house's chaos settings.
+No transfers to other banks yet: they need bank B, which joins the showcase with #62, together with the clearing
+house's chaos settings.
 
 Standard library only; runs in the python image of the compose profile "showcase". Settings via environment:
 BANK_URL (default http://bank-service:8080), ACCOUNTS (6), PAUSE_SECONDS (1.5).

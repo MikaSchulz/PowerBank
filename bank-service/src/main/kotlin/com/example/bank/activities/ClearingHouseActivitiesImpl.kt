@@ -8,6 +8,7 @@ import com.example.bank.workflow.BANK_TASK_QUEUE
 import com.example.payments.messages.Pacs002
 import com.example.payments.messages.Pacs008
 import com.example.payments.messages.Pacs028
+import com.example.payments.messages.TxSts
 import io.micrometer.observation.Observation
 import io.micrometer.observation.ObservationRegistry
 import io.temporal.activity.Activity
@@ -30,8 +31,8 @@ data class ClearingHouseProperties(
 
 /**
  * The messages to the clearing house over HTTP. Every call is its own span and timer `bank.clearing.call` with the
- * `message` (pacs.008, pacs.028) and its `outcome`; the RestClient's observation puts the trace context on the request,
- * so the clearing house continues the payment's trace.
+ * `message` (pacs.008, pacs.002, pacs.028) and its `outcome`; the RestClient's observation puts the trace context on
+ * the request, so the clearing house continues the payment's trace.
  */
 @Component
 @ActivityImpl(taskQueues = [BANK_TASK_QUEUE])
@@ -51,6 +52,7 @@ class ClearingHouseActivitiesImpl(
         .build()
 
     override fun submit(payment: InstantPayment): Submission = observe("pacs.008", payment.transferId, Submission::outcome) {
+        BankSpans.tag(BankSpans.TRANSFER_ID to payment.transferId)
         val debtorIban = queries.account(AccountId(payment.debtorAccountId))?.iban
             ?: return@observe Submission(received = false, reason = "The debtor account has no IBAN")
         val pacs008 = Pacs008(
@@ -77,20 +79,34 @@ class ClearingHouseActivitiesImpl(
         }
     }
 
-    override fun inquire(transferId: UUID): StatusReport =
-        observe("pacs.028", transferId, StatusReport::outcome) {
-            try {
-                StatusReport(http.post().uri("/pacs028").body(Pacs028(UUID.randomUUID(), transferId)).retrieve().body(Pacs002::class.java))
-            } catch (_: HttpClientErrorException.NotFound) {
-                StatusReport(status = null)
-            }
+    override fun inquire(uetr: UUID): StatusReport = observe("pacs.028", uetr, StatusReport::outcome) {
+        try {
+            StatusReport(http.post().uri("/pacs028").body(Pacs028(UUID.randomUUID(), uetr)).retrieve().body(Pacs002::class.java))
+        } catch (_: HttpClientErrorException.NotFound) {
+            StatusReport(status = null)
         }
+    }
 
-    private fun <T : Any> observe(message: String, transferId: UUID, outcome: (T) -> String, call: () -> T): T {
-        BankSpans.tag(BankSpans.TRANSFER_ID to transferId)
+    override fun answer(answer: PaymentAnswer): Boolean = observe("pacs.002", answer.uetr, { if (it) "received" else "refused" }) {
+        val pacs002 = Pacs002(
+            msgId = UUID.nameUUIDFromBytes("pacs.002:${answer.uetr}".toByteArray()), // a retry repeats the same message
+            uetr = answer.uetr,
+            txSts = if (answer.accepted) TxSts.ACCP else TxSts.RJCT,
+            reasonCode = answer.reasonCode,
+        )
+        try {
+            http.post().uri("/pacs002").body(pacs002).retrieve().toBodilessEntity()
+            true
+        } catch (_: HttpClientErrorException) { // 409: too late or already answered; its confirmation decides
+            false
+        }
+    }
+
+    private fun <T : Any> observe(message: String, uetr: UUID, outcome: (T) -> String, call: () -> T): T {
+        BankSpans.tag(BankSpans.UETR to uetr)
         val observation = Observation.createNotStarted("bank.clearing.call", observations)
             .lowCardinalityKeyValue("message", message)
-            .highCardinalityKeyValue(BankSpans.TRANSFER_ID, transferId.toString())
+            .highCardinalityKeyValue(BankSpans.UETR, uetr.toString())
             .highCardinalityKeyValue("temporal.activity.attempt", Activity.getExecutionContext().info.attempt.toString())
             .start()
         return try {

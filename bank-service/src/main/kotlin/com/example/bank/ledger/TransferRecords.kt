@@ -25,6 +25,8 @@ data class TransferRecord(
     val id: UUID,
     val status: TransferStatus,
     val reason: String?,
+    /** The ISO 20022 reason code of a rejected incoming payment; null otherwise. */
+    val reasonCode: String?,
     val details: TransferDetails?,
     val createdAt: Instant,
     val updatedAt: Instant,
@@ -109,6 +111,7 @@ class TransferRecords(private val jdbc: JdbcClient) {
             id = id,
             status = TransferStatus.valueOf(rs.getString("status")),
             reason = rs.getString("reason"),
+            reasonCode = rs.getString("reason_code"),
             details = rs.getString("kind")?.let {
                 TransferDetails(
                     id = id,
@@ -126,6 +129,6 @@ class TransferRecords(private val jdbc: JdbcClient) {
 
     private companion object {
         const val COLUMNS =
-            "id, status, reason, kind, debtor_account_id, creditor_account_id, amount_cents, trace_id, created_at, updated_at"
+            "id, status, reason, reason_code, kind, debtor_account_id, creditor_account_id, amount_cents, trace_id, created_at, updated_at"
     }
 }

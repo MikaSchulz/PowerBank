@@ -8,7 +8,12 @@ import java.util.UUID
  * The transfer's business status after a ledger activity, as the ledger's transfer decider decided it.
  * The workflow only mirrors it (for its `status` query) and branches on it; it never sets a status itself.
  */
-data class TransferOutcome(val status: TransferStatus, val reason: String? = null)
+data class TransferOutcome(
+    val status: TransferStatus,
+    val reason: String? = null,
+    /** The ISO 20022 code a rejected incoming payment is answered with; null otherwise. */
+    val reasonCode: String? = null,
+)
 
 data class InternalBooking(val transferId: UUID, val debtorAccountId: UUID, val creditorAccountId: UUID, val amountCents: Long)
 
@@ -45,6 +50,12 @@ interface LedgerActivities {
     fun settleExternalTransfer(transferId: UUID): TransferOutcome
 
     fun startInvestigation(investigation: Investigation): TransferOutcome
+
+    /** Incoming payment: accepted, or rejected with a reason code; decided once. */
+    fun answerIncomingPayment(transferId: UUID): TransferOutcome
+
+    /** Incoming payment settled by the clearing house: credits the customer from the settlement account. */
+    fun creditIncomingPayment(transferId: UUID): TransferOutcome
 
     /** Refunds the reserved amount. */
     fun refundExternalTransfer(refund: Refund): TransferOutcome

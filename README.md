@@ -11,7 +11,7 @@ OpenTelemetry with Grafana LGTM, Gradle 9.
 
 ## What it does
 
-- **Accounts and transfers:** internal transfers, transfers to other banks as SEPA Instant payments through a clearing
+- **Accounts and transfers:** internal transfers, SEPA Instant payments to and from other banks through a clearing
   house (ISO 20022 messages, 10-second deadline, status inquiries), cash deposits; duplicate submissions are
   rejected, concurrent transfers never overdraw an account.
 - **Suspected fraud:** transfers above a limit wait for an approval (Temporal update) for up to 3 days.

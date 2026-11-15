@@ -24,6 +24,7 @@ enum class TransferStatus(val terminal: Boolean = false) {
     RECEIVED,
     AWAITING_APPROVAL,
     APPROVED,
+    ACCEPTED,
     RESERVED,
     SENT_TO_EXTERNAL_BANK,
     UNDER_INVESTIGATION,

@@ -235,7 +235,7 @@ class TransferWorkflowTest {
         val (workflow, stub) = start(external(50_00))
         awaitStatus(workflow, TransferStatus.SENT_TO_EXTERNAL_BANK)
 
-        env.sleep(TransferWorkflowImpl.CONFIRMATION_TIMEOUT + TransferWorkflowImpl.INQUIRY_PERIOD + Duration.ofMinutes(2))
+        env.sleep(ClearingHouseWait.CONFIRMATION_TIMEOUT + ClearingHouseWait.INQUIRY_PERIOD + Duration.ofMinutes(2))
         awaitStatus(workflow, TransferStatus.UNDER_INVESTIGATION)
         env.sleep(Duration.ofHours(5))
         assertEquals(TransferStatus.UNDER_INVESTIGATION, workflow.status().status, "no guessing, also hours later")
@@ -384,113 +384,5 @@ class TransferWorkflowTest {
             Thread.sleep(20)
         }
         error("Status $expected not reached, last: ${runCatching { workflow.status() }.getOrNull()}")
-    }
-
-    /** Answers like the ledger would, without its rules: each step simply leads to its usual status. */
-    class FakeLedger : LedgerActivities {
-        val calls = CopyOnWriteArrayList<String>()
-
-        @Volatile var bookResult = TransferOutcome(TransferStatus.BOOKED)
-
-        @Volatile var reserveResult = TransferOutcome(TransferStatus.RESERVED)
-
-        @Volatile var investigation: Investigation? = null
-
-        @Volatile var verdict: ApprovalVerdict? = null
-
-        /** If set, `requireApproval` waits for it: the ledger has recorded the status, the workflow doesn't know yet. */
-        @Volatile var requireApprovalGate: CountDownLatch? = null
-
-        val requireApprovalEntered = CountDownLatch(1)
-
-        override fun requireApproval(request: ApprovalRequest): TransferOutcome {
-            requireApprovalEntered.countDown()
-            requireApprovalGate?.await(10, TimeUnit.SECONDS)
-            calls += "requireApproval"
-            return TransferOutcome(TransferStatus.AWAITING_APPROVAL, request.reason)
-        }
-
-        override fun decideApproval(verdict: ApprovalVerdict): TransferOutcome {
-            this.verdict = verdict
-            calls += if (verdict.approved) "approve" else "deny"
-            return if (verdict.approved) {
-                TransferOutcome(
-                    TransferStatus.APPROVED,
-                )
-            } else {
-                TransferOutcome(TransferStatus.REJECTED, "denied by the ledger")
-            }
-        }
-
-        override fun expireApproval(transferId: UUID) =
-            TransferOutcome(TransferStatus.REJECTED, "expired").also { calls += "expire" }
-
-        override fun bookInternalTransfer(booking: InternalBooking) = bookResult.also { calls += "book" }
-
-        override fun reserveForExternalTransfer(debit: ExternalDebit) = reserveResult.also { calls += "reserve" }
-
-        override fun markSentToExternalBank(transferId: UUID) =
-            TransferOutcome(TransferStatus.SENT_TO_EXTERNAL_BANK).also { calls += "markSent" }
-
-        /** If set, `settleExternalTransfer` waits for it: the workflow is busy with the confirmation it got. */
-        @Volatile var settleGate: CountDownLatch? = null
-
-        val settleEntered = CountDownLatch(1)
-
-        override fun settleExternalTransfer(transferId: UUID): TransferOutcome {
-            settleEntered.countDown()
-            settleGate?.await(10, TimeUnit.SECONDS)
-            calls += "settle"
-            return TransferOutcome(TransferStatus.COMPLETED)
-        }
-
-        override fun startInvestigation(investigation: Investigation): TransferOutcome {
-            this.investigation = investigation
-            calls += "investigate"
-            return TransferOutcome(TransferStatus.UNDER_INVESTIGATION, investigation.reason)
-        }
-
-        // The simulated external bank's steps: only executions from before SEPA Instant use them (replay test).
-        override fun debitForExternalTransfer(debit: ExternalDebit) =
-            TransferOutcome(TransferStatus.SENT_TO_EXTERNAL_BANK).also { calls += "debit" }
-
-        override fun completeExternalTransfer(transferId: UUID) = TransferOutcome(TransferStatus.COMPLETED).also { calls += "complete" }
-
-        override fun refundExternalTransfer(refund: Refund) = TransferOutcome(TransferStatus.REFUNDED, refund.reason).also {
-            calls +=
-                "refund"
-        }
-
-        override fun rejectTransfer(rejection: TransferRejection) =
-            TransferOutcome(TransferStatus.REJECTED, rejection.reason).also { calls += "reject" }
-    }
-
-    class FakeRisk : RiskActivities {
-        @Volatile var reviewRequired = false
-
-        override fun assess(check: RiskCheck) =
-            if (reviewRequired) RiskAssessment(true, "Amount exceeds approval limit") else RiskAssessment(false)
-    }
-
-    /** Receives every payment; answers inquiries as the test says (by default: still pending). */
-    class FakeClearingHouse : ClearingHouseActivities {
-        @Volatile var onSubmit: (InstantPayment) -> Submission = { Submission(received = true) }
-
-        /** Called with the transfer ID and the number of the inquiry (1, 2, …). */
-        @Volatile var onInquire: (
-            UUID,
-            Int,
-        ) -> StatusReport = { transferId, _ -> StatusReport(Pacs002(UUID.randomUUID(), transferId, TxSts.PDNG)) }
-
-        val submissions = CopyOnWriteArrayList<InstantPayment>()
-        val submissionAttempts = AtomicInteger()
-        val inquiries = AtomicInteger()
-
-        override fun submit(payment: InstantPayment): Submission {
-            submissionAttempts.incrementAndGet()
-            return onSubmit(payment).also { submissions += payment }
-        }
-
-        override fun inquire(transferId: UUID) = onInquire(transferId, inquiries.incrementAndGet())
     }
 }

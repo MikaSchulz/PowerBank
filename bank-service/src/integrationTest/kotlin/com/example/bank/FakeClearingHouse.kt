@@ -24,8 +24,14 @@ class FakeClearingHouse(port: Int) : AutoCloseable {
     /** The answer to a pacs.028; null: unknown payment (404). */
     @Volatile var onPacs028: (Pacs028) -> Pacs002? = { null }
 
+    /** The HTTP status for a creditor bank's answer: 202 taken, 409 not expected (any more). */
+    @Volatile var onPacs002: (Pacs002) -> Int = { ACCEPTED }
+
     val payments = CopyOnWriteArrayList<Pacs008>()
     val inquiries = CopyOnWriteArrayList<Pacs028>()
+
+    /** The bank's answers to incoming payments (ACCP or RJCT). */
+    val answers = CopyOnWriteArrayList<Pacs002>()
 
     private val json = JsonMapper.builder().addModule(kotlinModule()).build()
     private val server = HttpServer.create(InetSocketAddress("localhost", port), 0).apply {
@@ -33,6 +39,11 @@ class FakeClearingHouse(port: Int) : AutoCloseable {
             val payment = json.readValue<Pacs008>(exchange.requestBody)
             payments += payment
             respond(exchange, onPacs008(payment), null)
+        }
+        createContext("/api/clearing/pacs002") { exchange ->
+            val answer = json.readValue<Pacs002>(exchange.requestBody)
+            answers += answer
+            respond(exchange, onPacs002(answer), null)
         }
         createContext("/api/clearing/pacs028") { exchange ->
             val inquiry = json.readValue<Pacs028>(exchange.requestBody)
@@ -46,8 +57,10 @@ class FakeClearingHouse(port: Int) : AutoCloseable {
     fun reset() {
         onPacs008 = { ACCEPTED }
         onPacs028 = { null }
+        onPacs002 = { ACCEPTED }
         payments.clear()
         inquiries.clear()
+        answers.clear()
     }
 
     private fun respond(exchange: HttpExchange, status: Int, body: Any?) {

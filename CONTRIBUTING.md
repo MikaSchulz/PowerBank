@@ -49,9 +49,10 @@ docker compose down
   who calls it, controllers don't talk SQL.
 - **Database changes only as new Flyway migrations.** Never edit a migration that has been applied; add the next
   `V<n>__…sql` instead.
-- **Workflow changes must replay.** `TransferWorkflowReplayTest` replays recorded histories of the transfer workflow
-  with the current code. Before changing the workflow's steps, record the current behaviour
-  (`RECORD_HISTORIES=v<n> ./gradlew :bank-service:test --tests '*HistoryRecorder' --rerun`) and keep the old files.
+- **Workflow changes must replay.** `WorkflowReplayTest` replays recorded histories of the bank's workflows (transfer,
+  incoming payment) with the current code. Before changing a workflow's steps, record the current behaviour with its
+  recorder and a new prefix (`RECORD_HISTORIES=v<n> ./gradlew :bank-service:test --tests '*TransferWorkflowHistoryRecorder'
+  --rerun`) and keep the old files; the recorders never overwrite one.
   If the replay fails, executions that are running would break: put the change behind `Workflow.getVersion`.
 
 ## Dependencies

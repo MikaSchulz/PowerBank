@@ -27,9 +27,12 @@ data class Submission(val received: Boolean, val reason: String? = null)
 /** The answer to a status inquiry (pacs.028): the clearing house's pacs.002, or null if it doesn't know the payment. */
 data class StatusReport(val status: Pacs002? = null)
 
+/** The bank's answer to an incoming payment: accepted (ACCP), or rejected with an ISO 20022 reason code (RJCT). */
+data class PaymentAnswer(val uetr: UUID, val accepted: Boolean, val reasonCode: String? = null)
+
 /**
- * The bank's side of the clearing house (#58): it sends payments there and asks for their status. The clearing house's
- * confirmations come back through the bank's inbound endpoint (`/api/clearing/inbound/pacs002`).
+ * The bank's side of the clearing house (#58): it sends payments there, answers incoming ones and asks for their
+ * status. The clearing house's messages come in through the bank's inbound endpoints (`/api/clearing/inbound/…`).
  * Technical errors (clearing house down, 5xx, timeouts) are exceptions and get retried by Temporal.
  */
 @ActivityInterface(namePrefix = "ClearingHouse")
@@ -38,5 +41,11 @@ interface ClearingHouseActivities {
     fun submit(payment: InstantPayment): Submission
 
     /** Sends a pacs.028: what happened to the payment? Answered from the clearing house's books. */
-    fun inquire(transferId: UUID): StatusReport
+    fun inquire(uetr: UUID): StatusReport
+
+    /**
+     * Sends the bank's pacs.002 for an incoming payment. True: the clearing house took it. False: it doesn't expect it
+     * (any more, e.g. after its deadline); its confirmation then tells what became of the payment.
+     */
+    fun answer(answer: PaymentAnswer): Boolean
 }
