@@ -1,10 +1,16 @@
 # PowerBank alert rules (Grafana-managed), provisioned into the folder "PowerBank". Mounted into the
 # grafana/otel-lgtm container by compose.yaml; changes need a container restart.
 #
-# Every rule has a query A and a threshold C. Rules return "no data" while the bank-service isn't running or there
-# is no traffic; that counts as OK. Notifications aren't configured yet: firing alerts show up under
-# Alerting → Alert rules and on the dashboard "PowerBank overview".
+# Every rule has a query A and a threshold C. Rules return "no data" while the banks aren't running or there is no
+# traffic; that counts as OK. The banks' rules fire per bank: one alert instance per service_name (bank-a, bank-b), so
+# the summary names the bank. Notifications aren't configured yet: firing alerts show up under Alerting → Alert rules
+# and on the dashboards "PowerBank overview" and "PowerBank clearing house".
 apiVersion: 1
+
+# Rules that were renamed or replaced; Grafana keeps provisioned rules that are only removed from this file.
+deleteRules:
+  - orgId: 1
+    uid: powerbank-refund-rate   # replaced by powerbank-interbank-rejections (#62)
 
 groups:
   - orgId: 1
@@ -21,7 +27,7 @@ groups:
             datasourceUid: prometheus
             model:
               refId: A
-              expr: abs(sum(bank_ledger_sum_cents))
+              expr: abs(sum by (service_name) (bank_ledger_sum_cents))
               instant: true
               range: false
           - refId: C
@@ -38,7 +44,7 @@ groups:
         labels:
           severity: critical
         annotations:
-          summary: The sum of all postings is not 0.
+          summary: "{{ $labels.service_name }}: the sum of all postings is not 0."
           description: >-
             Double-entry bookkeeping is broken: the postings sum up to {{ $values.A.Value }} cents instead of 0.
             Every transfer must sum up to zero. Find the one that doesn't:
@@ -57,9 +63,9 @@ groups:
               refId: A
               # Share of calls that failed technically, only with at least 5 calls in 5 minutes.
               expr: >-
-                (sum(increase(bank_clearing_call_milliseconds_count{outcome="failure"}[5m]))
-                  / sum(increase(bank_clearing_call_milliseconds_count[5m])))
-                and on() (sum(increase(bank_clearing_call_milliseconds_count[5m])) >= 5)
+                (sum by (service_name) (increase(bank_clearing_call_milliseconds_count{outcome="failure"}[5m]))
+                  / sum by (service_name) (increase(bank_clearing_call_milliseconds_count[5m])))
+                and (sum by (service_name) (increase(bank_clearing_call_milliseconds_count[5m])) >= 5)
               instant: true
               range: false
           - refId: C
@@ -76,27 +82,35 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: More than half of the calls to the clearing house failed in the last 5 minutes.
+          summary: "{{ $labels.service_name }}: more than half of the calls to the clearing house failed in the last 5 minutes."
           description: >-
-            {{ humanizePercentage $values.A.Value }} of the pacs.008 and pacs.028 calls failed. Temporal retries them;
+            {{ humanizePercentage $values.A.Value }} of the pacs.008, pacs.002 and pacs.028 calls failed. Temporal retries them;
             payments without a final status go under investigation after 5 minutes. Is the clearing house running?
           __dashboardUid__: powerbank-overview
           __panelId__: "13"
 
-      - uid: powerbank-refund-rate
-        title: Many external transfers refunded
+      - uid: powerbank-interbank-rejections
+        title: Many interbank payments rejected
         condition: C
         data:
           - refId: A
-            relativeTimeRange: { from: 1800, to: 0 }
+            relativeTimeRange: { from: 1200, to: 0 }
             datasourceUid: prometheus
             model:
               refId: A
-              # Share of finished external transfers that were refunded, only with at least 5 of them in 15 minutes.
+              # Per bank: the share of its payments through the clearing house that failed, outgoing ones refunded
+              # and incoming ones rejected, only with at least 10 of them in 10 minutes. Outgoing transfers this bank
+              # rejected itself (no money, approval denied) never reached the clearing house and don't count.
               expr: >-
-                (sum(increase(bank_transfers_finished_total{kind="external", status="REFUNDED"}[15m]))
-                  / sum(increase(bank_transfers_finished_total{kind="external"}[15m])))
-                and on() (sum(increase(bank_transfers_finished_total{kind="external"}[15m])) >= 5)
+                (sum by (service_name) (
+                    increase(bank_transfers_finished_total{kind="external", status="REFUNDED"}[10m])
+                    or increase(bank_transfers_finished_total{kind="incoming", status="REJECTED"}[10m]))
+                  / sum by (service_name) (
+                    increase(bank_transfers_finished_total{kind="external", status=~"COMPLETED|REFUNDED"}[10m])
+                    or increase(bank_transfers_finished_total{kind="incoming"}[10m])))
+                and (sum by (service_name) (
+                    increase(bank_transfers_finished_total{kind="external", status=~"COMPLETED|REFUNDED"}[10m])
+                    or increase(bank_transfers_finished_total{kind="incoming"}[10m])) >= 10)
               instant: true
               range: false
           - refId: C
@@ -109,13 +123,55 @@ groups:
                 - evaluator: { type: gt, params: [0.3] }
         noDataState: OK
         execErrState: Error
-        for: 0s
+        for: 1m   # no flapping while a share hovers around the threshold
         labels:
           severity: warning
         annotations:
-          summary: More than 30 % of the external transfers in the last 15 minutes were refunded.
-          description: "{{ humanizePercentage $values.A.Value }} of the finished external transfers were refunded."
+          summary: "{{ $labels.service_name }}: more than 30 % of the interbank payments in the last 10 minutes failed."
+          description: >-
+            {{ humanizePercentage $values.A.Value }} of the payments to and from other banks were rejected: by the
+            creditor bank (closed or unknown account), or by the clearing house (deadline missed, AB05). Many AB05:
+            see the timeouts per participant on the clearing house's dashboard.
           __dashboardUid__: powerbank-overview
+          __panelId__: "13"
+
+      - uid: powerbank-clearing-timeouts
+        title: Creditor bank misses the deadline
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 1200, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              # The clearing house's view, per creditor bank (bank code): the share of payments to it that were
+              # rejected with AB05, only with at least 5 payments to it in 10 minutes.
+              expr: >-
+                (sum by (creditor_bank) (increase(clearing_payments_finished_total{reason="AB05"}[10m]))
+                  / sum by (creditor_bank) (increase(clearing_payments_finished_total[10m])))
+                and (sum by (creditor_bank) (increase(clearing_payments_finished_total[10m])) >= 5)
+              instant: true
+              range: false
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0.3] }
+        noDataState: OK
+        execErrState: Error
+        for: 1m   # no flapping while a share hovers around the threshold
+        labels:
+          severity: warning
+        annotations:
+          summary: "Bank {{ $labels.creditor_bank }} missed the deadline for more than 30 % of its payments in the last 10 minutes."
+          description: >-
+            {{ humanizePercentage $values.A.Value }} of the payments to bank {{ $labels.creditor_bank }} were rejected
+            with AB05: the clearing house couldn't deliver them, or the bank didn't answer within 10 seconds. Is the
+            bank up and reachable? (99000001 is bank A, 99000002 bank B.)
+          __dashboardUid__: powerbank-clearing
           __panelId__: "13"
 
       - uid: powerbank-approval-waiting
@@ -127,7 +183,7 @@ groups:
             datasourceUid: prometheus
             model:
               refId: A
-              expr: max(bank_transfers_in_flight_age_max_seconds{status="AWAITING_APPROVAL"})
+              expr: max by (service_name) (bank_transfers_in_flight_age_max_seconds{status="AWAITING_APPROVAL"})
               instant: true
               range: false
           - refId: C
@@ -144,7 +200,7 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: A transfer has been waiting for an approval for more than a day.
+          summary: "{{ $labels.service_name }}: a transfer has been waiting for an approval for more than a day."
           description: >-
             One transfer has been awaiting approval for {{ humanizeDuration $values.A.Value }}. Transfers above the
             limit wait for up to 3 days and are rejected afterwards; approve or deny it in the UI.
@@ -160,7 +216,7 @@ groups:
             datasourceUid: prometheus
             model:
               refId: A
-              expr: max(bank_transfers_in_flight_age_max_seconds{status=~"RESERVED|SENT_TO_EXTERNAL_BANK"})
+              expr: max by (service_name) (bank_transfers_in_flight_age_max_seconds{status=~"RESERVED|SENT_TO_EXTERNAL_BANK"})
               instant: true
               range: false
           - refId: C
@@ -177,7 +233,7 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: An external transfer has been reserved or sent for more than 15 minutes.
+          summary: "{{ $labels.service_name }}: an external transfer has been reserved or sent for more than 15 minutes."
           description: >-
             The workflow puts a transfer under investigation after 5 minutes without a final status, so after
             {{ humanizeDuration $values.A.Value }} something is wrong: is the worker running?
@@ -185,7 +241,7 @@ groups:
           __panelId__: "4"
 
       - uid: powerbank-transfer-under-investigation
-        title: External transfer under investigation
+        title: Interbank payments under investigation
         condition: C
         data:
           - refId: A
@@ -193,7 +249,7 @@ groups:
             datasourceUid: prometheus
             model:
               refId: A
-              expr: max(bank_transfers_in_flight{status="UNDER_INVESTIGATION"})
+              expr: max by (service_name) (bank_transfers_in_flight{status="UNDER_INVESTIGATION"})
               instant: true
               range: false
           - refId: C
@@ -210,10 +266,11 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: External transfers have no final status from the clearing house.
+          summary: "{{ $labels.service_name }}: payments without a final status from the clearing house."
           description: >-
-            {{ $values.A.Value }} transfer(s) under investigation: their amount stays reserved until the clearing house
-            confirms or answers a status inquiry. The workflow keeps asking every 10 minutes; check the clearing house.
+            {{ $values.A.Value }} payment(s) under investigation, outgoing or incoming: no final status after 5 minutes.
+            An outgoing amount stays reserved, an incoming one isn't credited, until the clearing house confirms or
+            answers a status inquiry. The workflows keep asking every 10 minutes; check the clearing house.
           __dashboardUid__: powerbank-overview
           __panelId__: "3"
 
@@ -227,7 +284,7 @@ groups:
             model:
               refId: A
               # Received or approved transfers are booked within seconds; nothing is booked for them yet.
-              expr: max(bank_transfers_in_flight_age_max_seconds{status=~"RECEIVED|APPROVED"})
+              expr: max by (service_name) (bank_transfers_in_flight_age_max_seconds{status=~"RECEIVED|APPROVED"})
               instant: true
               range: false
           - refId: C
@@ -244,7 +301,7 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: A transfer has been received or approved for more than 15 minutes without being booked.
+          summary: "{{ $labels.service_name }}: a transfer has been received or approved for more than 15 minutes without being booked."
           description: >-
             One transfer has been waiting {{ humanizeDuration $values.A.Value }} for its next step. Is the worker
             running, and does its workflow still exist in Temporal (#40)?
@@ -262,7 +319,7 @@ groups:
               refId: A
               # p95 schedule-to-start latency, one series per task kind.
               expr: >-
-                histogram_quantile(0.95, sum by (le, task) (
+                histogram_quantile(0.95, sum by (le, service_name, task) (
                   label_replace(rate(temporal_workflow_task_schedule_to_start_latency_milliseconds_bucket[5m]), "task", "workflow task", "", "")
                   or
                   label_replace(rate(temporal_activity_schedule_to_start_latency_milliseconds_bucket[5m]), "task", "activity", "", "")
@@ -283,7 +340,7 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: "{{ $labels.task }}s wait more than 1 s in the task queue (p95)."
+          summary: "{{ $labels.service_name }}: {{ $labels.task }}s wait more than 1 s in the task queue (p95)."
           description: >-
             Schedule-to-start p95 is {{ humanize $values.A.Value }} ms: the workers are too slow or have too few
             slots. Compare with "Task slots in use" on the dashboard.
@@ -299,7 +356,7 @@ groups:
             datasourceUid: prometheus
             model:
               refId: A
-              expr: sum by (method, uri) (increase(http_server_requests_milliseconds_count{status=~"5.."}[5m]))
+              expr: sum by (service_name, method, uri) (increase(http_server_requests_milliseconds_count{status=~"5..", service_name=~"bank-.*"}[5m]))
               instant: true
               range: false
           - refId: C
@@ -316,7 +373,7 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: "{{ $labels.method }} {{ $labels.uri }} answered with 5xx in the last 5 minutes."
+          summary: "{{ $labels.service_name }}: {{ $labels.method }} {{ $labels.uri }} answered with 5xx in the last 5 minutes."
           description: Look for the errors in the logs panel of the dashboard or in Loki with severity_text="ERROR".
           __dashboardUid__: powerbank-overview
           __panelId__: "22"
@@ -387,7 +444,7 @@ groups:
           __panelId__: "2"
 
       - uid: powerbank-task-queue-stuck
-        title: Nobody works on the bank task queue
+        title: Nobody works on a task queue
         condition: C
         data:
           - refId: A
@@ -395,8 +452,9 @@ groups:
             datasourceUid: prometheus
             model:
               refId: A
-              # Measured by the server, so it also fires when the bank-service (the worker) is down completely.
-              expr: max by (task_type) (approximate_backlog_age_seconds{taskqueue="bank"})
+              # Measured by the server, so it also fires when a worker is down completely. Namespaces: default is
+              # bank A, bank_b bank B, clearing the clearing house; the integration tests leave tasks behind.
+              expr: max by (namespace, taskqueue, task_type) (approximate_backlog_age_seconds{taskqueue=~"bank|clearing", namespace!="integration_test"})
               instant: true
               range: false
           - refId: C
@@ -413,8 +471,8 @@ groups:
         labels:
           severity: critical
         annotations:
-          summary: "{{ $labels.task_type }} tasks have been waiting in the bank task queue for {{ humanizeDuration $values.A.Value }}."
-          description: No worker picks them up. Is the bank-service running and connected to Temporal?
+          summary: "{{ $labels.task_type }} tasks have been waiting in the {{ $labels.taskqueue }} task queue of namespace {{ $labels.namespace }} for {{ humanizeDuration $values.A.Value }}."
+          description: No worker picks them up. Is the bank (or the clearing house) running and connected to Temporal?
           __dashboardUid__: powerbank-infrastructure
           __panelId__: "5"
 

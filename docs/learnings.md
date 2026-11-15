@@ -43,6 +43,14 @@
   transfer workflow. Transfers that were still running before (e.g. waiting for an approval) can't be replayed with the
   new code; locally they are terminated or the stack is reset. Since then such changes need `Workflow.getVersion`
   (stage 11, [#16](https://github.com/MikaSchulz/PowerBank/issues/16)); #59 is the first one that uses it.
+- **One rejection, two banks:** a payment that fails between the banks is refunded at the debtor bank and rejected at
+  the creditor bank. A bank's share of failed interbank payments (outgoing and incoming) is therefore about the clearing
+  house's failure rate, not half of it; the alert threshold of 30 % is set with that in mind.
+- **Removed alert rules stay:** Grafana keeps a provisioned alert rule that is only deleted from the file. Replacing
+  one needs its UID under `deleteRules` (#62).
+- **A per-bank label for free:** Prometheus turns the OTLP resource attribute `service.name` into the labels `job`
+  and `service_name`, so the two instances of the same application are told apart without a tag of their own. The
+  dashboards and alerts use `service_name`, the same name as in Loki and Tempo.
 - **A computed property on an activity DTO breaks the replay:** a `val rejected get() = …` on the activity result was
   serialized by Jackson into the history and then couldn't be read back, so the workflow task failed and retried
   forever; the workflow test hung instead of failing. Helpers on DTOs go into extension functions in the workflow.

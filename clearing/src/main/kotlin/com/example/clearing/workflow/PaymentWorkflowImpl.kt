@@ -47,10 +47,12 @@ class PaymentWorkflowImpl : PaymentWorkflow {
     override fun clear(request: ClearingRequest): PaymentState {
         this.request = request
         val uetr = request.pacs008.uetr
-        val deadline = Workflow.currentTimeMillis() + request.deadlineMillis
+        val received = Workflow.currentTimeMillis()
+        val deadline = received + request.deadlineMillis
 
         outcome = settlement.reserve(uetr)
         if (outcome.status == ClearingStatus.REJECTED) {
+            recordFinalStatus(received)
             confirm(request.debtorBank)
             return finish()
         }
@@ -67,6 +69,7 @@ class PaymentWorkflowImpl : PaymentWorkflow {
         outcome =
             if (a != null) settlement.recordAnswer(CreditorAnswer(uetr, a.txSts == TxSts.ACCP, a.reasonCode)) else settlement.expire(uetr)
         if (outcome.status == ClearingStatus.ACCEPTED) outcome = settlement.settle(uetr)
+        recordFinalStatus(received)
 
         confirm(request.debtorBank)
         if (forwarded) confirm(checkNotNull(request.creditorBank))
@@ -113,12 +116,29 @@ class PaymentWorkflowImpl : PaymentWorkflow {
             .build(),
     )
 
+    /**
+     * Metrics per participant, through Temporal's metrics scope (replay-safe), once the status is final and before the
+     * confirmations, which may take long while a bank is down:
+     * - `clearing_payments_finished{status, reason, debtor_bank, creditor_bank}`: e.g. the timeouts (AB05) per creditor bank;
+     * - `clearing_payment_duration{status, debtor_bank, creditor_bank}`: from receiving the pacs.008 to the final status.
+     * Bank codes only; "none" for a creditor bank that isn't a participant.
+     */
+    private fun recordFinalStatus(received: Long) {
+        val request = checkNotNull(request)
+        val scope = Workflow.getMetricsScope().tagged(
+            mapOf(
+                "status" to outcome.status.name,
+                "debtor_bank" to request.debtorBank,
+                "creditor_bank" to (request.creditorBank ?: "none"),
+            ),
+        )
+        scope.tagged(mapOf("reason" to (outcome.reasonCode ?: "none"))).counter("clearing_payments_finished").inc(1)
+        scope.timer("clearing_payment_duration")
+            .record(com.uber.m3.util.Duration.ofMillis((Workflow.currentTimeMillis() - received).toDouble()))
+    }
+
     private fun finish(): PaymentState {
         val state = status()
-        Workflow.getMetricsScope()
-            .tagged(mapOf("status" to state.status.name, "reason" to (state.reasonCode ?: "none")))
-            .counter("clearing_payments_finished")
-            .inc(1)
         log.info("Payment {} finished: {}{}", state.uetr, state.status, state.reasonCode?.let { " ($it)" } ?: "")
         return state
     }

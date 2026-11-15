@@ -60,6 +60,7 @@ class ClearingController(
      */
     @PostMapping("/pacs008")
     fun pacs008(@RequestBody pacs008: Pacs008): ResponseEntity<Void> {
+        refuseDuringOutage()
         val elapsed = Duration.between(pacs008.acceptanceDateTime, Instant.now()).coerceAtLeast(Duration.ZERO)
         val remaining = properties.deadline - elapsed
         if (remaining <= Duration.ZERO) throw PaymentTooLate()
@@ -83,6 +84,7 @@ class ClearingController(
     /** From the creditor bank: its answer to a forwarded payment. */
     @PostMapping("/pacs002")
     fun pacs002(@RequestBody pacs002: Pacs002): ResponseEntity<Void> {
+        refuseDuringOutage()
         client.newWorkflowStub(PaymentWorkflow::class.java, paymentWorkflowId(pacs002.uetr)).creditorAnswer(pacs002)
         return ResponseEntity.accepted().build()
     }
@@ -90,6 +92,7 @@ class ClearingController(
     /** A status inquiry: answered from the clearing house's books, also long after the payment. */
     @PostMapping("/pacs028")
     fun pacs028(@RequestBody pacs028: Pacs028): ResponseEntity<Pacs002> {
+        refuseDuringOutage()
         val payment = ledger.find(pacs028.uetr) ?: return ResponseEntity.notFound().build()
         val txSts = when (payment.status) {
             PaymentStatus.SETTLED -> TxSts.ACSC
@@ -109,10 +112,23 @@ class ClearingController(
     fun chaos() = chaos.settings
 
     @PutMapping("/chaos")
-    fun chaos(@RequestBody settings: ChaosSettings): ChaosSettings = settings.also { chaos.settings = it }
+    fun chaos(@RequestBody settings: ChaosSettings): ChaosSettings {
+        val unknown = settings.unreachableBanks.filter { properties.participant(it) == null }
+        require(unknown.isEmpty()) { "Not a participant: ${unknown.joinToString()}" }
+        chaos.settings = settings
+        return settings
+    }
+
+    /** Chaos: while the clearing house is "down", the participants' messages don't get through. Operators still can. */
+    private fun refuseDuringOutage() {
+        if (chaos.settings.outage) throw ClearingHouseDown()
+    }
 
     @ExceptionHandler(IllegalArgumentException::class)
     fun badRequest(e: IllegalArgumentException) = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, e.message)
+
+    @ExceptionHandler(ClearingHouseDown::class)
+    fun down() = ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE, "The clearing house is down (chaos)")
 
     @ExceptionHandler(PaymentTooLate::class)
     fun tooLate() = ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_CONTENT, "The payment's deadline has passed")
@@ -128,6 +144,9 @@ class ClearingController(
         private const val MAX_LIMIT = 200
     }
 }
+
+/** Chaos: the clearing house plays dead for the participants. */
+class ClearingHouseDown : RuntimeException("The clearing house is down (chaos)")
 
 /** The payment reached the clearing house after its deadline. */
 class PaymentTooLate : RuntimeException("The payment's deadline has passed")

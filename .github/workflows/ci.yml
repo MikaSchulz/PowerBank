@@ -53,8 +53,9 @@ jobs:
         if: always()
         run: docker compose down -v
 
+      # Also when the job ran into its timeout (cancelled): the reports show which tests had finished.
       - uses: actions/upload-artifact@v7
-        if: failure()
+        if: failure() || cancelled()
         with:
           name: test-reports
           path: |
@@ -62,8 +63,9 @@ jobs:
             */build/test-results/
           retention-days: 7
 
-  # The showcase (docs/showcase.md): builds the bank-service image, starts everything with demo traffic and checks
-  # that transfers get booked and the ledger stays balanced. Runs next to the build job, not before it.
+  # The showcase (docs/showcase.md): builds the images, starts both banks and the clearing house with demo traffic and
+  # checks that payments flow both ways, the ledgers stay balanced and one trace spans all three services. Runs next to
+  # the build job, not before it.
   showcase:
     name: Showcase (Docker)
     runs-on: ubuntu-latest
@@ -75,19 +77,11 @@ jobs:
         run: docker compose --profile showcase up -d --build --wait
 
       - name: Smoke test
-        run: |
-          sleep 30
-          curl -fsS localhost:8080/api/operations/ledger/summary | python3 -c '
-          import json, sys
-          summary = json.load(sys.stdin)
-          print(summary)
-          assert summary["transferCount"] > 0, "the demo traffic booked nothing"
-          assert summary["sumOfAllPostingsCents"] == 0, "the ledger is unbalanced"
-          '
+        run: python3 showcase/smoke_test.py
 
       - name: Logs
         if: failure()
-        run: docker compose --profile showcase logs --no-color bank-service clearing traffic | tail -n 200
+        run: docker compose --profile showcase logs --no-color bank-a bank-b clearing traffic | tail -n 300
 
       - name: Stop
         if: always()

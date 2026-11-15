@@ -1,5 +1,6 @@
 package com.example.clearing
 
+import com.example.clearing.activities.ChaosSettings
 import com.example.clearing.config.ClearingProperties
 import com.example.clearing.domain.PaymentStatus
 import com.example.clearing.ledger.ClearingLedger
@@ -21,6 +22,7 @@ import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
 import org.springframework.web.client.HttpClientErrorException
 import org.springframework.web.client.RestClient
+import org.springframework.web.client.RestClientResponseException
 import tools.jackson.databind.json.JsonMapper
 import tools.jackson.module.kotlin.kotlinModule
 import tools.jackson.module.kotlin.readValue
@@ -131,6 +133,37 @@ class ClearingIntegrationTest @Autowired constructor(private val ledger: Clearin
     }
 
     @Test
+    fun `during an outage the clearing house refuses the banks' messages`() {
+        val payment = payment()
+        withChaos(ChaosSettings(outage = true)) {
+            assertEquals(HttpStatus.SERVICE_UNAVAILABLE, statusOf { post("/pacs008", payment) })
+            assertEquals(HttpStatus.SERVICE_UNAVAILABLE, statusOf { inquiry(payment.uetr) })
+        }
+        assertEquals(null, ledger.find(payment.uetr))
+    }
+
+    @Test
+    fun `a creditor bank the clearing house can't reach misses the deadline`() {
+        bankB.behaviour = Behaviour.ACCEPT
+        val before = balances()
+        val payment = withChaos(ChaosSettings(unreachableBanks = setOf("99000002"))) {
+            send().also { assertEquals(ReasonCodes.TIMEOUT_CREDITOR_AGENT, awaitFinished(it.uetr).reasonCode) }
+        }
+
+        assertEquals(before, balances())
+        awaitConfirmation(bankA, payment.uetr, TxSts.RJCT)
+        assertTrue(bankB.confirmations.none { it.uetr == payment.uetr }, "bank B never got the payment")
+    }
+
+    @Test
+    fun `chaos only knows the participants`() {
+        val error = runCatching { putChaos(ChaosSettings(unreachableBanks = setOf("12345678"))) }.exceptionOrNull()
+
+        assertEquals(HttpStatus.BAD_REQUEST, (error as? HttpClientErrorException)?.statusCode)
+        assertEquals(ChaosSettings(), clearing.get().uri("/chaos").retrieve().body(ChaosSettings::class.java))
+    }
+
+    @Test
     fun `the settlement accounts always add up`() {
         assertEquals(0, balances().values.sum())
         assertTrue(balances().getValue(BANK_A) != 0L, "the participants are funded")
@@ -156,6 +189,21 @@ class ClearingIntegrationTest @Autowired constructor(private val ledger: Clearin
     private fun post(path: String, body: Any) {
         clearing.post().uri(path).contentType(MediaType.APPLICATION_JSON).body(body).retrieve().toBodilessEntity()
     }
+
+    private fun putChaos(settings: ChaosSettings) {
+        clearing.put().uri("/chaos").contentType(MediaType.APPLICATION_JSON).body(settings).retrieve().toBodilessEntity()
+    }
+
+    private fun <T> withChaos(settings: ChaosSettings, block: () -> T): T {
+        putChaos(settings)
+        try {
+            return block()
+        } finally {
+            putChaos(ChaosSettings())
+        }
+    }
+
+    private fun statusOf(call: () -> Unit) = ((runCatching(call).exceptionOrNull()) as? RestClientResponseException)?.statusCode
 
     private fun inquiry(uetr: UUID): Pacs002 =
         checkNotNull(

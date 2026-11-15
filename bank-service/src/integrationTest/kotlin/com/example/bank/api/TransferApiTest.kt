@@ -301,6 +301,22 @@ class TransferApiTest @Autowired constructor(
     }
 
     @Test
+    fun `only an account without money can be closed, and a closed one takes no transfers`() {
+        val alice = openAccount()
+        val bob = openAccount()
+        deposit(alice, 10_00)
+
+        mvc.post("/api/backoffice/accounts/$alice/close").andExpect { status { isConflict() } }
+        mvc.post("/api/backoffice/accounts/$bob/close").andExpect {
+            status { isOk() }
+            jsonPath("$.status") { value("CLOSED") }
+        }
+
+        val transferId = send(alice, ibanOf(bob), 5_00)
+        assertEquals(TransferStatus.REJECTED, awaitResult(transferId).status)
+    }
+
+    @Test
     fun `transfers are listed with their details, newest first`() {
         val alice = openAccount()
         val bob = openAccount()

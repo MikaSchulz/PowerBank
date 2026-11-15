@@ -42,6 +42,12 @@ management:
       export:
         url: http://localhost:4318/v1/metrics
         step: 10s
+  metrics:
+    distribution:
+      # Histogram buckets for the settlement time (clearing_payment_duration) and HTTP, for the dashboard's percentiles.
+      percentiles-histogram:
+        clearing: true
+        http.server.requests: true
 
 jdbc:
   datasource-proxy:

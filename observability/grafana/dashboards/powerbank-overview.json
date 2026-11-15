@@ -1,7 +1,7 @@
 {
   "uid": "powerbank-overview",
   "title": "PowerBank overview",
-  "description": "Transfers, ledger, clearing house, Temporal worker, REST API and browser in one place. Provisioned from observability/grafana/dashboards (changes in the UI are not saved to the file).",
+  "description": "Transfers, ledger, clearing house, Temporal worker, REST API and browser in one place, for bank A, bank B or both (variable Bank). Provisioned from observability/grafana/dashboards (changes in the UI are not saved to the file).",
   "tags": [
     "powerbank"
   ],
@@ -16,7 +16,36 @@
   "schemaVersion": 41,
   "version": 1,
   "templating": {
-    "list": []
+    "list": [
+      {
+        "name": "bank",
+        "label": "Bank",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "query": {
+          "query": "label_values(bank_ledger_sum_cents, service_name)",
+          "refId": "bank"
+        },
+        "definition": "label_values(bank_ledger_sum_cents, service_name)",
+        "refresh": 2,
+        "multi": true,
+        "includeAll": true,
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "sort": 1,
+        "description": "The bank's service name: bank-a (PowerBank) or bank-b (Partner Bank)."
+      }
+    ]
   },
   "annotations": {
     "list": []
@@ -60,7 +89,7 @@
     {
       "type": "row",
       "id": 1,
-      "title": "Bank",
+      "title": "Banks",
       "collapsed": false,
       "gridPos": {
         "x": 0,
@@ -74,7 +103,7 @@
       "type": "stat",
       "id": 2,
       "title": "Ledger sum (must be 0)",
-      "description": "Sum of all postings (bank_ledger_sum_cents). Double-entry bookkeeping keeps it at exactly 0; anything else fires the critical alert \"Ledger unbalanced\".",
+      "description": "Sum of all postings per bank (bank_ledger_sum_cents). Double-entry bookkeeping keeps it at exactly 0; anything else fires the critical alert \"Ledger unbalanced\".",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -92,8 +121,8 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(bank_ledger_sum_cents)",
-          "legendFormat": "sum",
+          "expr": "sum by (service_name) (bank_ledger_sum_cents{service_name=~\"$bank\"})",
+          "legendFormat": "{{service_name}}",
           "instant": true,
           "range": false
         }
@@ -147,17 +176,17 @@
         },
         "colorMode": "background",
         "graphMode": "none",
-        "textMode": "auto",
+        "textMode": "value_and_name",
         "justifyMode": "auto",
         "orientation": "auto",
         "wideLayout": true
       }
     },
     {
-      "type": "stat",
+      "type": "bargauge",
       "id": 3,
       "title": "Transfers in flight",
-      "description": "Not finished yet, by business status from the ledger: RECEIVED and APPROVED (about to be booked), AWAITING_APPROVAL (a person has to decide), RESERVED and SENT_TO_EXTERNAL_BANK (amount reserved, the clearing house decides within seconds), UNDER_INVESTIGATION (no final status from the clearing house; the amount stays reserved).",
+      "description": "Not finished yet, by business status from the ledger: RECEIVED and APPROVED (about to be booked), AWAITING_APPROVAL (a person has to decide), RESERVED and SENT_TO_EXTERNAL_BANK (amount reserved, the clearing house decides within seconds), UNDER_INVESTIGATION (no final status from the clearing house; the amount stays reserved). Only statuses with transfers in them are shown.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -175,8 +204,8 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (status) (bank_transfers_in_flight)",
-          "legendFormat": "{{status}}",
+          "expr": "sum by (service_name, status) (bank_transfers_in_flight{service_name=~\"$bank\"}) > 0",
+          "legendFormat": "{{service_name}} · {{status}}",
           "instant": true,
           "range": false
         }
@@ -185,7 +214,8 @@
         "defaults": {
           "unit": "short",
           "color": {
-            "mode": "thresholds"
+            "mode": "fixed",
+            "fixedColor": "blue"
           },
           "thresholds": {
             "mode": "absolute",
@@ -196,7 +226,9 @@
               }
             ]
           },
-          "mappings": []
+          "mappings": [],
+          "min": 0,
+          "noValue": "none"
         },
         "overrides": []
       },
@@ -208,16 +240,23 @@
           "fields": "",
           "values": false
         },
-        "colorMode": "none",
-        "graphMode": "none",
-        "textMode": "value_and_name",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "wideLayout": true
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "valueMode": "color",
+        "namePlacement": "top",
+        "showUnfilled": true,
+        "sizing": "auto",
+        "minVizWidth": 8,
+        "minVizHeight": 10,
+        "maxVizHeight": 18,
+        "text": {
+          "titleSize": 11,
+          "valueSize": 16
+        }
       }
     },
     {
-      "type": "stat",
+      "type": "bargauge",
       "id": 4,
       "title": "Oldest waiting transfer",
       "description": "Per status, how long the longest-waiting transfer has been in it. An approval may take up to 3 days; an external transfer gets its final status within seconds, or goes UNDER_INVESTIGATION after 5 minutes without one.",
@@ -238,8 +277,8 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "max by (status) (bank_transfers_in_flight_age_max_seconds)",
-          "legendFormat": "{{status}}",
+          "expr": "max by (service_name, status) (bank_transfers_in_flight_age_max_seconds{service_name=~\"$bank\"}) > 0",
+          "legendFormat": "{{service_name}} · {{status}}",
           "instant": true,
           "range": false
         }
@@ -267,7 +306,9 @@
               }
             ]
           },
-          "mappings": []
+          "mappings": [],
+          "min": 0,
+          "noValue": "none"
         },
         "overrides": []
       },
@@ -279,12 +320,19 @@
           "fields": "",
           "values": false
         },
-        "colorMode": "value",
-        "graphMode": "none",
-        "textMode": "value_and_name",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "wideLayout": true
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "valueMode": "color",
+        "namePlacement": "top",
+        "showUnfilled": true,
+        "sizing": "auto",
+        "minVizWidth": 8,
+        "minVizHeight": 10,
+        "maxVizHeight": 18,
+        "text": {
+          "titleSize": 11,
+          "valueSize": 16
+        }
       }
     },
     {
@@ -340,8 +388,8 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (kind, status) (rate(bank_transfers_finished_total[$__rate_interval])) * 60",
-          "legendFormat": "{{kind}} · {{status}}"
+          "expr": "sum by (service_name, kind, status) (rate(bank_transfers_finished_total{service_name=~\"$bank\"}[$__rate_interval])) * 60",
+          "legendFormat": "{{service_name}} · {{kind}} · {{status}}"
         }
       ],
       "fieldConfig": {
@@ -394,7 +442,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "histogram_quantile(0.5, sum by (le) (rate(bank_transfer_approval_wait_milliseconds_bucket[$__rate_interval])))",
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(bank_transfer_approval_wait_milliseconds_bucket{service_name=~\"$bank\"}[$__rate_interval])))",
           "legendFormat": "p50"
         },
         {
@@ -403,7 +451,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(bank_transfer_approval_wait_milliseconds_bucket[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(bank_transfer_approval_wait_milliseconds_bucket{service_name=~\"$bank\"}[$__rate_interval])))",
           "legendFormat": "p95"
         }
       ],
@@ -470,7 +518,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "histogram_quantile(0.5, sum by (le) (rate(bank_ledger_lock_milliseconds_bucket[$__rate_interval])))",
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(bank_ledger_lock_milliseconds_bucket{service_name=~\"$bank\"}[$__rate_interval])))",
           "legendFormat": "p50"
         },
         {
@@ -479,7 +527,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(bank_ledger_lock_milliseconds_bucket[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(bank_ledger_lock_milliseconds_bucket{service_name=~\"$bank\"}[$__rate_interval])))",
           "legendFormat": "p95"
         },
         {
@@ -488,7 +536,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "histogram_quantile(0.99, sum by (le) (rate(bank_ledger_lock_milliseconds_bucket[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(bank_ledger_lock_milliseconds_bucket{service_name=~\"$bank\"}[$__rate_interval])))",
           "legendFormat": "p99"
         }
       ],
@@ -542,7 +590,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "histogram_quantile(0.95, sum by (le, command) (rate(bank_account_command_milliseconds_bucket[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le, command) (rate(bank_account_command_milliseconds_bucket{service_name=~\"$bank\"}[$__rate_interval])))",
           "legendFormat": "{{command}}"
         }
       ],
@@ -609,8 +657,8 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (message, outcome) (rate(bank_clearing_call_milliseconds_count[$__rate_interval])) * 60",
-          "legendFormat": "{{message}} · {{outcome}}"
+          "expr": "sum by (service_name, message, outcome) (rate(bank_clearing_call_milliseconds_count{service_name=~\"$bank\"}[$__rate_interval])) * 60",
+          "legendFormat": "{{service_name}} · {{message}} · {{outcome}}"
         }
       ],
       "fieldConfig": {
@@ -690,8 +738,8 @@
     {
       "type": "timeseries",
       "id": 13,
-      "title": "Failed calls and refunded share",
-      "description": "Alerts at more than 50 % failed calls to the clearing house (5 min) and more than 30 % refunded external transfers (15 min).",
+      "title": "Failed calls and rejected interbank payments",
+      "description": "Per bank. Alerts at more than 50 % failed calls to the clearing house (5 min) and more than 30 % rejected interbank payments (10 min): outgoing ones refunded, incoming ones rejected.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -709,8 +757,8 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(rate(bank_clearing_call_milliseconds_count{outcome=\"failure\"}[5m])) / sum(rate(bank_clearing_call_milliseconds_count[5m]))",
-          "legendFormat": "calls failed (5m)"
+          "expr": "sum by (service_name) (rate(bank_clearing_call_milliseconds_count{outcome=\"failure\", service_name=~\"$bank\"}[5m])) / sum by (service_name) (rate(bank_clearing_call_milliseconds_count{service_name=~\"$bank\"}[5m]))",
+          "legendFormat": "{{service_name}}: calls failed (5m)"
         },
         {
           "refId": "B",
@@ -718,8 +766,8 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(rate(bank_transfers_finished_total{kind=\"external\", status=\"REFUNDED\"}[15m])) / sum(rate(bank_transfers_finished_total{kind=\"external\"}[15m]))",
-          "legendFormat": "external transfers refunded (15m)"
+          "expr": "sum by (service_name) (increase(bank_transfers_finished_total{kind=\"external\", status=\"REFUNDED\", service_name=~\"$bank\"}[10m]) or increase(bank_transfers_finished_total{kind=\"incoming\", status=\"REJECTED\", service_name=~\"$bank\"}[10m])) / sum by (service_name) (increase(bank_transfers_finished_total{kind=\"external\", status=~\"COMPLETED|REFUNDED\", service_name=~\"$bank\"}[10m]) or increase(bank_transfers_finished_total{kind=\"incoming\", service_name=~\"$bank\"}[10m]))",
+          "legendFormat": "{{service_name}}: interbank payments rejected (10m)"
         }
       ],
       "fieldConfig": {
@@ -773,8 +821,8 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "histogram_quantile(0.95, sum by (le, message) (rate(bank_clearing_call_milliseconds_bucket[$__rate_interval])))",
-          "legendFormat": "{{message}}"
+          "expr": "histogram_quantile(0.95, sum by (le, service_name, message) (rate(bank_clearing_call_milliseconds_bucket{service_name=~\"$bank\"}[$__rate_interval])))",
+          "legendFormat": "{{service_name}} · {{message}}"
         }
       ],
       "fieldConfig": {
@@ -886,7 +934,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(temporal_workflow_task_schedule_to_start_latency_milliseconds_bucket[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(temporal_workflow_task_schedule_to_start_latency_milliseconds_bucket{service_name=~\"$bank\"}[$__rate_interval])))",
           "legendFormat": "workflow tasks"
         },
         {
@@ -895,7 +943,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(temporal_activity_schedule_to_start_latency_milliseconds_bucket[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(temporal_activity_schedule_to_start_latency_milliseconds_bucket{service_name=~\"$bank\"}[$__rate_interval])))",
           "legendFormat": "activities"
         }
       ],
@@ -949,7 +997,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(temporal_workflow_task_execution_latency_milliseconds_bucket[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(temporal_workflow_task_execution_latency_milliseconds_bucket{service_name=~\"$bank\"}[$__rate_interval])))",
           "legendFormat": "workflow task"
         }
       ],
@@ -1003,7 +1051,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "histogram_quantile(0.95, sum by (le, activity_type) (rate(temporal_activity_execution_latency_milliseconds_bucket[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le, activity_type) (rate(temporal_activity_execution_latency_milliseconds_bucket{service_name=~\"$bank\"}[$__rate_interval])))",
           "legendFormat": "{{activity_type}}"
         }
       ],
@@ -1057,8 +1105,8 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (activity_type, exception) (rate(temporal_activity_execution_failed_total[$__rate_interval])) * 60",
-          "legendFormat": "{{activity_type}} · {{exception}}"
+          "expr": "sum by (service_name, activity_type, exception) (rate(temporal_activity_execution_failed_total{service_name=~\"$bank\"}[$__rate_interval])) * 60",
+          "legendFormat": "{{service_name}} · {{activity_type}} · {{exception}}"
         }
       ],
       "fieldConfig": {
@@ -1111,8 +1159,8 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (worker_type) (temporal_worker_task_slots_used{worker_type=~\"WorkflowWorker|ActivityWorker\"})",
-          "legendFormat": "{{worker_type}}"
+          "expr": "sum by (service_name, worker_type) (temporal_worker_task_slots_used{worker_type=~\"WorkflowWorker|ActivityWorker\", service_name=~\"$bank\"})",
+          "legendFormat": "{{service_name}} · {{worker_type}}"
         }
       ],
       "fieldConfig": {
@@ -1178,7 +1226,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (method, uri, status) (rate(http_server_requests_milliseconds_count{uri=~\"/api/.*\"}[$__rate_interval]))",
+          "expr": "sum by (method, uri, status) (rate(http_server_requests_milliseconds_count{uri=~\"/api/.*\", service_name=~\"$bank\"}[$__rate_interval]))",
           "legendFormat": "{{method}} {{uri}} {{status}}"
         }
       ],
@@ -1232,7 +1280,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "histogram_quantile(0.95, sum by (le, method, uri) (rate(http_server_requests_milliseconds_bucket{uri=~\"/api/.*\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le, method, uri) (rate(http_server_requests_milliseconds_bucket{uri=~\"/api/.*\", service_name=~\"$bank\"}[$__rate_interval])))",
           "legendFormat": "{{method}} {{uri}}"
         }
       ],
@@ -1267,7 +1315,7 @@
     {
       "type": "row",
       "id": 24,
-      "title": "Browser (bank-ui)",
+      "title": "Browser (bank-ui, both banks)",
       "collapsed": false,
       "gridPos": {
         "x": 0,
@@ -1615,7 +1663,7 @@
     {
       "type": "logs",
       "id": 28,
-      "title": "Warnings and errors (banks and their UI)",
+      "title": "Warnings and errors (the selected banks and their UI)",
       "description": "From Loki. Expand a line and use the trace ID to open its trace.",
       "datasource": {
         "type": "loki",
@@ -1635,7 +1683,7 @@
             "uid": "loki"
           },
           "queryType": "range",
-          "expr": "{service_name=~\"bank-.*\"} | severity_text=~\"WARN|ERROR\""
+          "expr": "{service_name=~\"$bank|bank-ui\"} | severity_text=~\"WARN|ERROR\""
         }
       ],
       "options": {

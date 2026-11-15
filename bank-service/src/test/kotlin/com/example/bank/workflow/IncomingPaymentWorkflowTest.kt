@@ -21,6 +21,8 @@ import org.junit.jupiter.api.assertThrows
 import java.time.Duration
 import java.time.Instant
 import java.util.UUID
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.TimeUnit
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
@@ -125,13 +127,17 @@ class IncomingPaymentWorkflowTest {
 
     @Test
     fun `a confirmation that arrives before the answer's activity has returned still counts`() {
+        val confirmed = CompletableFuture<Unit>()
         clearing.onAnswer = { answer ->
-            Thread { confirm(answer.uetr, TxSts.ACSC) }.start()
+            Thread { confirmed.completeWith { confirm(answer.uetr, TxSts.ACSC) } }.start()
             Thread.sleep(500)
             true
         }
 
-        assertEquals(TransferStatus.BOOKED, run().status)
+        val (_, stub) = start()
+        // A refused confirmation must fail the test here: without it the workflow would ask forever (time skipping).
+        confirmed.get(10, TimeUnit.SECONDS)
+        assertEquals(TransferStatus.BOOKED, stub.getResult(TransferState::class.java).status)
         assertEquals(listOf("answer", "credit"), ledger.calls)
     }
 

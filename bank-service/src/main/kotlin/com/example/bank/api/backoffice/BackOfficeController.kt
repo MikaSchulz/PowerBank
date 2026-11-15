@@ -87,6 +87,10 @@ class BackOfficeController(
     @PostMapping("/accounts/{accountId}/unblock")
     fun unblock(@PathVariable accountId: UUID): AccountView = afterCommand(accountId) { ledger.unblockAccount(it) }
 
+    /** Only an account with a zero balance can be closed; for good. Payments from other banks are refused (AC04). */
+    @PostMapping("/accounts/{accountId}/close")
+    fun close(@PathVariable accountId: UUID): AccountView = afterCommand(accountId) { ledger.closeAccount(it) }
+
     /** Every transfer, newest first; by account, or by status for the work queues (AWAITING_APPROVAL, UNDER_INVESTIGATION). */
     @GetMapping("/transfers")
     fun transfers(

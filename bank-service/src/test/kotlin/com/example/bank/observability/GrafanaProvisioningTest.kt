@@ -71,6 +71,27 @@ class GrafanaProvisioningTest {
     }
 
     @Test
+    fun `the overview shows the banks picked in its variable`() {
+        val overview = dashboards.single { it["uid"] == "powerbank-overview" }
+        val variable = overview.map("templating").list("list").single { it["name"] == "bank" }
+        assertTrue(variable["definition"].toString().contains("service_name"))
+        val bankQueries = overview.list("panels").flatMap { it.list("targets") }.map { it["expr"].toString() }
+            .filter { expr -> listOf("bank_", "temporal_", "http_server_").any { it in expr } }
+        assertTrue(bankQueries.isNotEmpty())
+        bankQueries.forEach { assertTrue("\$bank" in it, "not filtered by bank: $it") }
+    }
+
+    @Test
+    fun `alerts about the banks fire per bank`() {
+        val bankRules = rules.filter { rule -> rule.list("data").any { it.map("model")["expr"].toString().contains("bank_") } }
+        assertTrue(bankRules.isNotEmpty())
+        bankRules.forEach { rule ->
+            val expr = rule.list("data").first().map("model")["expr"].toString()
+            assertTrue("by (service_name" in expr, "${rule["title"]}: not per bank")
+        }
+    }
+
+    @Test
     fun `compose mounts files that exist`() {
         val volumes = load(root.resolve("compose.yaml")).map("services").let { it["lgtm"] as Map<*, *> }["volumes"] as List<*>
         val files = volumes.map { it.toString().substringBefore(':') }.filter { it.startsWith("./") } // not named volumes
