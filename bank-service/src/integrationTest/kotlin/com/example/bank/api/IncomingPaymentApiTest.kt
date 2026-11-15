@@ -110,6 +110,18 @@ class IncomingPaymentApiTest @Autowired constructor(
     }
 
     @Test
+    fun `a payment to a closed account is rejected with AC04`() {
+        val (account, iban) = openAccount()
+        mvc.post("/api/backoffice/accounts/$account/close").andExpect { status { isOk() } }
+        val uetr = UUID.randomUUID()
+
+        receive(uetr, iban, 10_00)
+
+        assertEquals(ReasonCodes.CLOSED_ACCOUNT, awaitAnswer(uetr).reasonCode)
+        assertEquals(TransferStatus.REJECTED, awaitResult(uetr).status)
+    }
+
+    @Test
     fun `accepted, but rejected by the clearing house, nothing is booked`() {
         val (account, iban) = openAccount()
         val uetr = UUID.randomUUID()

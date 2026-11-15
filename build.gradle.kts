@@ -77,6 +77,6 @@ tasks.register<Exec>("composeDown") {
 
 tasks.register<Exec>("showcaseUp") {
     group = "docker"
-    description = "Starts the whole system with the bank-service as a container and demo traffic (docs/showcase.md)."
+    description = "Starts the whole system in containers, two banks and the clearing house, with demo traffic (docs/showcase.md)."
     commandLine("docker", "compose", "--profile", "showcase", "up", "-d", "--build", "--wait")
 }

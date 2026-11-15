@@ -10,8 +10,19 @@ import org.springframework.web.client.HttpClientErrorException
 import org.springframework.web.client.RestClient
 import java.util.concurrent.ThreadLocalRandom
 
-/** Chaos for demos (`PUT /api/clearing/chaos`): delayed or lost forwards, so the creditor bank misses the deadline. */
-data class ChaosSettings(val forwardDelayMs: Long = 0, val dropForwardRate: Double = 0.0) {
+/**
+ * Chaos for demos (`PUT /api/clearing/chaos`), set by operations and by the showcase's traffic generator:
+ * - [forwardDelayMs], [dropForwardRate]: late or lost forwards, so the creditor bank misses the deadline (AB05);
+ * - [outage]: the clearing house is down: it refuses the banks' messages (503) and sends none itself;
+ * - [unreachableBanks]: bank codes of participants it can't reach, as if they were down: forwards and confirmations to
+ *   them fail and are retried.
+ */
+data class ChaosSettings(
+    val forwardDelayMs: Long = 0,
+    val dropForwardRate: Double = 0.0,
+    val outage: Boolean = false,
+    val unreachableBanks: Set<String> = emptySet(),
+) {
     init {
         require(forwardDelayMs in 0..MAX_DELAY_MS) { "forwardDelayMs must be between 0 and $MAX_DELAY_MS" }
         require(dropForwardRate in 0.0..1.0) { "dropForwardRate must be between 0 and 1" }
@@ -55,6 +66,11 @@ class BankMessagingActivitiesImpl(
     override fun confirm(confirmation: Confirmation) = send(confirmation.bank, "pacs002", confirmation.pacs002)
 
     private fun send(bankCode: String, message: String, body: Any) {
+        val settings = chaos.settings
+        if (settings.outage || bankCode in settings.unreachableBanks) {
+            // retryable, like a connection error: the workflow keeps trying until its timeout
+            throw ApplicationFailure.newFailure("Bank $bankCode not reachable (chaos)", "Unreachable")
+        }
         val participant = properties.participant(bankCode)
             ?: throw ApplicationFailure.newNonRetryableFailure("Bank $bankCode is not a participant", "UnknownParticipant")
         try {

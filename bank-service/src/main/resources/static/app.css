@@ -214,6 +214,12 @@ a.brand:hover { text-decoration: none; }
 .stat.bad strong { color: var(--bad); }
 .chaos-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 14px; }
 .chaos-form .presets { grid-column: 1 / -1; display: flex; gap: 6px; flex-wrap: wrap; }
+.chaos-form .wide { grid-column: 1 / -1; }
+.check { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; }
+.check input { width: 16px; height: 16px; padding: 0; margin: 0; flex: none; accent-color: var(--accent); box-shadow: none; }
+.check-group { margin: 0; padding: 0; border: 0; min-width: 0; display: grid; gap: 6px; }
+.check-group legend { padding: 0; margin-bottom: 6px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.checks { display: flex; flex-wrap: wrap; gap: 8px 18px; }
 .link-list { display: flex; flex-wrap: wrap; gap: 8px; }
 
 /* ---------- accounts ---------- */

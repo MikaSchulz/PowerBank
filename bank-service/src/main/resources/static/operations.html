@@ -50,13 +50,21 @@
           <button type="button" class="chip-btn" data-preset="normal">Normal</button>
           <button type="button" class="chip-btn" data-preset="slow">Creditor bank too slow</button>
           <button type="button" class="chip-btn" data-preset="lossy">Half the forwards lost</button>
+          <button type="button" class="chip-btn" data-preset="outage">Clearing house down</button>
         </div>
         <label class="field"><span>Forward delay <em>ms, up to 30 000</em></span><input name="forwardDelayMs" type="number" min="0" max="30000" step="500"></label>
         <label class="field"><span>Lost forwards <em>share, 0 to 1</em></span><input name="dropForwardRate" type="number" min="0" max="1" step="0.05"></label>
+        <label class="check wide"><input name="outage" type="checkbox"><span>Down: refuses the banks' messages and sends none</span></label>
+        <fieldset class="check-group wide">
+          <legend>Can't reach</legend>
+          <div id="unreachable-banks" class="checks"><span class="hint">Loading…</span></div>
+        </fieldset>
         <div class="form-actions"><button class="btn primary" type="submit">Apply</button></div>
       </form>
-      <p class="hint">Chaos at the clearing house, for demos: a forward that is late or lost misses the 10-second
-        deadline, so the payment is rejected with AB05 and both banks learn it.</p>
+      <p class="hint">Chaos at the clearing house, for demos. A forward that is late or lost, or goes to a bank it can't
+        reach, misses the 10-second deadline: the payment is rejected with AB05 and both banks learn it. While it is down,
+        payments stay reserved; after 5 minutes they go under investigation, and status inquiries resolve them once it
+        is back.</p>
       <div class="panel-sub"><h3>Settlement accounts at the clearing house</h3></div>
       <div id="clearing-balances"></div>
     </section>

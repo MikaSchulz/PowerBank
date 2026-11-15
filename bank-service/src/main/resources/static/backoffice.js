@@ -1,5 +1,5 @@
 // The back office (#61): what bank employees work with, through /api/backoffice/…: the work queues (approvals,
-// payments under investigation), customer accounts (open, cash deposits, block) and every transfer.
+// payments under investigation), customer accounts (open, cash deposits, block, close) and every transfer.
 
 import {
   $, $$, STATUS, TERMINAL, accountPostings, accountTraceQl, ago, api, changeTracker, createDrawer, esc, externalLink,
@@ -192,16 +192,17 @@ function accountDetails(id, data) {
       <dt>Available</dt><dd>${esc(money(account.balanceCents + account.overdraftLimitCents))}</dd>
     </dl>
     <div class="d-actions">
-      <button class="btn primary" data-action="deposit" data-id="${id}">Cash deposit</button>
+      ${account.status === 'CLOSED' ? '' : `<button class="btn primary" data-action="deposit" data-id="${id}">Cash deposit</button>`}
       ${account.status === 'BLOCKED'
     ? `<button class="btn ghost" data-action="unblock" data-id="${id}">Unblock</button>`
     : account.status === 'OPEN' ? `<button class="btn ghost" data-action="block" data-id="${id}">Block</button>` : ''}
+      ${account.status !== 'CLOSED' && account.balanceCents === 0 ? `<button class="btn ghost" data-action="close" data-id="${id}">Close</button>` : ''}
       <button class="btn ghost" data-action="rename" data-id="${id}">Name</button>
       <button class="btn ghost" data-action="filter-account" data-id="${id}">Show transfers</button>
       <a class="btn ghost" href="customer.html?account=${id}">Online banking as this customer</a>
       ${externalLink(grafanaSearchUrl(accountTraceQl(id)), 'Traces in Grafana')}
     </div>
-    <p class="hint">A blocked account still receives internal transfers, but every debit is rejected, and payments from other banks are refused (AC06).</p>
+    <p class="hint">A blocked account still receives internal transfers, but every debit is rejected, and payments from other banks are refused (AC06). Only an account with a zero balance can be closed, for good: transfers to it are rejected, from other banks with AC04.</p>
     <div class="d-section">
       <h3>Postings (newest first)</h3>
       ${data ? accountPostings(data.postings) : '<p class="hint">Loading…</p>'}
@@ -310,10 +311,12 @@ function bindEvents() {
         break;
       }
       case 'block':
-      case 'unblock': {
+      case 'unblock':
+      case 'close': {
         const result = await traced(`${action} account`, { 'bank.account.id': id },
           (span) => api('POST', `/api/backoffice/accounts/${id}/${action}`, undefined, { span }));
-        toast(result.ok ? (action === 'block' ? 'Account blocked' : 'Account unblocked') : 'Not possible', result.ok ? '' : esc(problem(result)), result.ok ? 'ok' : 'bad');
+        const done = { block: 'Account blocked', unblock: 'Account unblocked', close: 'Account closed' }[action];
+        toast(result.ok ? done : 'Not possible', result.ok ? '' : esc(problem(result)), result.ok ? 'ok' : 'bad');
         refresh();
         break;
       }

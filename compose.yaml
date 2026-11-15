@@ -74,7 +74,7 @@ services:
     volumes:
       - temporal-data:/home/temporal   # the image's user may only write here
   # Grafana with Tempo (traces), Loki (logs) and Prometheus (metrics) in one container.
-  # The bank-service sends OTLP traces, metrics and logs to localhost:4318 (application.yml).
+  # The banks and the clearing house send OTLP traces, metrics and logs to localhost:4318 (application.yml).
   lgtm:
     image: grafana/otel-lgtm:0.39.0
     ports: ["3000:3000", "4317:4317", "4318:4318"]
@@ -97,8 +97,9 @@ services:
   # --- Showcase: the whole system without a local Java, with demo traffic (docs/showcase.md) -------------------------
   #   docker compose --profile showcase up -d --build --wait     (or ./gradlew showcaseUp)
   #   docker compose --profile showcase down                     (or ./gradlew composeDown)
-  # Don't run it next to ./gradlew :bank-service:bootRun: both use port 8080.
-  bank-service:
+  # Bank A (8080), bank B (8081) and the clearing house (8090) between them, all from this repository. Don't run it
+  # next to bootRun of the same services: they use the same ports.
+  bank-a:
     profiles: [showcase]
     build:
       context: .
@@ -131,19 +132,25 @@ services:
     image: python:3.13-alpine
     command: ["python", "-u", "/traffic.py"]
     environment:
-      BANK_URL: http://bank-service:8080
+      BANK_A_URL: http://bank-a:8080
+      BANK_B_URL: http://bank-b:8081
+      CLEARING_URL: http://clearing:8090
     volumes:
       - ./showcase/traffic.py:/traffic.py:ro
     depends_on:
-      bank-service:
+      bank-a:
+        condition: service_healthy
+      bank-b:
+        condition: service_healthy
+      clearing:
         condition: service_healthy
 
   # --- Bank B: the same bank-service as a second, separate bank (#55, application-bank-b.yml) -----------------------
   #   docker compose --profile bank-b up -d --build --wait    UI: http://localhost:8081
-  # Its own Postgres schema (bank_b) and Temporal namespace (bank-b), next to bank A in the same containers.
-  # For development, bootRun works too: ./gradlew :bank-service:bootRun --args='--spring.profiles.active=bank-b'
+  # Its own Postgres schema (bank_b) and Temporal namespace (bank-b), next to bank A in the same containers. Part of
+  # the showcase. For development, bootRun works too: ./gradlew :bank-service:bootRun --args='--spring.profiles.active=bank-b'
   bank-b:
-    profiles: [bank-b]
+    profiles: [bank-b, showcase]
     build:
       context: .
       dockerfile: Dockerfile
@@ -173,9 +180,9 @@ services:
 
   # --- Clearing house: between the banks, like a SEPA Instant CSM (#58) ---------------------------------------------
   #   docker compose --profile clearing up -d --build --wait    API: http://localhost:8090/api/clearing
-  # Its own Postgres schema (clearing) and Temporal namespace (clearing). It reaches the banks on the host: bank A
-  # (bootRun or the showcase, port 8080) and bank B (port 8081). External transfers go through it (#59), so the
-  # showcase starts it too. For development: ./gradlew :clearing:bootRun
+  # Its own Postgres schema (clearing) and Temporal namespace (clearing). It reaches the banks through the host's ports,
+  # bank A on 8080 and bank B on 8081, so they may run with bootRun or in containers (the showcase).
+  # For development: ./gradlew :clearing:bootRun
   clearing:
     profiles: [clearing, showcase]
     build:

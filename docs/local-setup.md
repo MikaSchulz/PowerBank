@@ -20,7 +20,7 @@ docker compose down
 ```
 
 `./gradlew composeUp` and `./gradlew composeDown` do the same (`composeDown` also stops the [showcase](showcase.md),
-which runs the bank-service in Docker with demo traffic). `--wait` returns once Postgres and Temporal accept
+which runs both banks and the clearing house in Docker with demo traffic). `--wait` returns once Postgres and Temporal accept
 connections. If the stack isn't running, the app stops right at startup with "Postgres is not reachable … Start
 the local stack first". The connections are set in `application.yml` (`localhost:5432`, `localhost:7233`,
 OTLP to `localhost:4318`); other environments override them, e.g. with `SPRING_DATASOURCE_URL`.

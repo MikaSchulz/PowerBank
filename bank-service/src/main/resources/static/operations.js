@@ -8,11 +8,17 @@ import {
 
 const state = { summary: null, offline: false, systemAccounts: [], clearing: null, chaos: null };
 
+const NORMAL = { forwardDelayMs: 0, dropForwardRate: 0, outage: false, unreachableBanks: [] };
 const PRESETS = {
-  normal: { forwardDelayMs: 0, dropForwardRate: 0 },
-  slow: { forwardDelayMs: 12_000, dropForwardRate: 0 },
-  lossy: { forwardDelayMs: 0, dropForwardRate: 0.5 },
+  normal: NORMAL,
+  slow: { ...NORMAL, forwardDelayMs: 12_000 },
+  lossy: { ...NORMAL, dropForwardRate: 0.5 },
+  outage: { ...NORMAL, outage: true },
 };
+
+/** The participants, by bank code, from the clearing house's settlement accounts ("bank:<code>"). */
+const participants = () => (Array.isArray(state.clearing) ? state.clearing : [])
+  .map((a) => a.account).filter((a) => a.startsWith('bank:')).map((a) => a.slice(5));
 
 const refresh = single(async () => {
   const quiet = { sampled: false };
@@ -24,9 +30,11 @@ const refresh = single(async () => {
   state.offline = summary.status === 0;
   state.summary = summary.ok ? summary.data : null;
   if (accounts.ok) state.systemAccounts = accounts.data;
+  const known = participants().join();
   state.clearing = clearing.ok ? clearing.data : { error: problem(clearing) };
   await drawer.refresh();
   render();
+  if (participants().join() !== known) renderUnreachable();
 });
 
 async function loadChaos() {
@@ -38,6 +46,27 @@ function fillChaos(settings) {
   const form = $('#chaos-form');
   form.forwardDelayMs.value = settings.forwardDelayMs;
   form.dropForwardRate.value = settings.dropForwardRate;
+  form.outage.checked = Boolean(settings.outage);
+  state.chaos = settings;
+  renderUnreachable();
+}
+
+function readChaos(form) {
+  return {
+    forwardDelayMs: Number(form.forwardDelayMs.value),
+    dropForwardRate: Number(form.dropForwardRate.value),
+    outage: form.outage.checked,
+    unreachableBanks: $$('#unreachable-banks input:checked').map((input) => input.value),
+  };
+}
+
+function describeChaos(s) {
+  const parts = [];
+  if (s.outage) parts.push('down');
+  if (s.forwardDelayMs) parts.push(`${s.forwardDelayMs} ms delay`);
+  if (s.dropForwardRate) parts.push(`${Math.round(s.dropForwardRate * 100)} % of the forwards lost`);
+  if (s.unreachableBanks.length) parts.push(`can't reach ${s.unreachableBanks.join(', ')}`);
+  return parts.length ? parts.join(', ') : 'normal';
 }
 
 // ---------- rendering ----------
@@ -83,6 +112,16 @@ function renderSystemAccounts() {
     </button>`).join('');
 }
 
+/** One checkbox per participant; keeps what is ticked in the form until the settings are applied or reloaded. */
+function renderUnreachable() {
+  const element = $('#unreachable-banks');
+  const codes = participants();
+  if (!codes.length) { element.innerHTML = '<span class="hint">No participants known</span>'; return; }
+  const ticked = new Set(state.chaos?.unreachableBanks ?? []);
+  element.innerHTML = codes.map((code) => `
+    <label class="check"><input type="checkbox" value="${esc(code)}" ${ticked.has(code) ? 'checked' : ''}><span>Bank ${esc(code)}</span></label>`).join('');
+}
+
 function renderClearing() {
   const element = $('#clearing-balances');
   if (!state.clearing) { element.innerHTML = '<p class="hint">Loading…</p>'; return; }
@@ -102,6 +141,7 @@ function renderLinks() {
   const temporal = `${config.temporalUi}/namespaces/${encodeURIComponent(config.temporalNamespace)}/workflows`;
   $('#links').innerHTML = [
     externalLink(`${config.grafana}/d/powerbank-overview`, 'Dashboard: PowerBank overview'),
+    externalLink(`${config.grafana}/d/powerbank-clearing`, 'Dashboard: clearing house'),
     externalLink(`${config.grafana}/d/powerbank-infrastructure`, 'Dashboard: infrastructure'),
     externalLink(`${config.grafana}/alerting/list`, 'Alert rules'),
     externalLink(temporal, `Temporal: namespace ${config.temporalNamespace}`),
@@ -134,15 +174,17 @@ const drawer = createDrawer({
 
 function bindEvents() {
   for (const preset of $$('[data-preset]')) preset.addEventListener('click', () => fillChaos(PRESETS[preset.dataset.preset]));
+  $('#unreachable-banks').addEventListener('change', () => {
+    state.chaos = { ...(state.chaos ?? NORMAL), unreachableBanks: readChaos($('#chaos-form')).unreachableBanks };
+  });
   $('#chaos-form').addEventListener('submit', async (event) => {
     event.preventDefault();
-    const form = event.target;
-    const settings = { forwardDelayMs: Number(form.forwardDelayMs.value), dropForwardRate: Number(form.dropForwardRate.value) };
+    const settings = readChaos(event.target);
     const result = await traced('update clearing house chaos', {},
       (span) => api('PUT', '/api/operations/clearing-house/chaos', settings, { span }));
     if (result.ok) {
       fillChaos(result.data);
-      toast('Clearing house updated', `${settings.forwardDelayMs} ms delay, ${Math.round(settings.dropForwardRate * 100)} % of the forwards lost`, 'ok');
+      toast('Clearing house updated', esc(describeChaos(settings)), 'ok');
     } else {
       toast('Not applied', esc(problem(result)), 'bad');
     }

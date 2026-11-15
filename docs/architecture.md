@@ -310,7 +310,11 @@ mechanism (#55). It has its own Postgres schema and Temporal namespace (`clearin
      or `AB05` without an answer in time);
   5. confirm the result to both banks.
 - **API** (`/api/clearing`): `pacs008` from debtor banks, `pacs002` answers from creditor banks, `pacs028` status
-  inquiries, and for operations the payments, the settlement balances and chaos settings (delayed or lost forwards).
+  inquiries, and for operations the payments, the settlement balances and chaos settings for demos: delayed or lost
+  forwards, an outage (it refuses the banks' messages with 503 and sends none) and banks it can't reach.
+- **Metrics** per participant (bank codes): `clearing_payments_finished_total{status, reason, debtor_bank,
+  creditor_bank}` and the settlement time `clearing_payment_duration_*`, recorded by the workflow once the status is
+  final (see [observability](observability.md)).
 - Banks receive messages at `POST /api/clearing/inbound/pacs008` (payments from other banks) and `…/pacs002` (the
   final status of a payment, to both banks); they answer a forwarded payment at the clearing house's `pacs002`.
 

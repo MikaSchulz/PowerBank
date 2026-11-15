@@ -9,8 +9,8 @@ the API (#61); the header shows which bank you are in (bank A or bank B, see [lo
 | Area | For | What it shows |
 | --- | --- | --- |
 | **Online banking** (`customer.html`) | a customer | one account with its IBAN, balance and bookings; money to any IBAN (this bank's: booked internally, another bank's: SEPA Instant); every transfer in and out; one-click scenarios |
-| **Back office** (`backoffice.html`) | bank employees | the work queues (approvals, payments under investigation), customer accounts (open, cash deposit, block, unblock), every transfer with its postings |
-| **Operations** (`operations.html`) | admins | the ledger check, the bank's own accounts (cash, clearing, settlement), the clearing house's chaos settings and settlement accounts, links to Grafana and Temporal |
+| **Back office** (`backoffice.html`) | bank employees | the work queues (approvals, payments under investigation), customer accounts (open, cash deposit, block, unblock, close), every transfer with its postings |
+| **Operations** (`operations.html`) | admins | the ledger check, the bank's own accounts (cash, clearing, settlement), the clearing house's chaos settings (late or lost forwards, down, a bank it can't reach) and settlement accounts, links to Grafana and Temporal |
 
 - **No login yet** ([#36](https://github.com/MikaSchulz/PowerBank/issues/36)): online banking has an *Acting as* picker
   instead, one customer per account until account opening ([#13](https://github.com/MikaSchulz/PowerBank/issues/13)).
@@ -35,13 +35,16 @@ the API (#61); the header shows which bank you are in (bank A or bank B, see [lo
    payment *Received* → *Accepted* → *Booked*. To an IBAN bank B doesn't have, both sides end rejected with `AC01`; to a
    bank outside the clearing house with `RC01`.
 5. In **operations**, set the clearing house to *Creditor bank too slow* and send money to bank B: rejected with `AB05`
-   after the deadline. Set it back to *Normal*.
-6. Stop the clearing house and send money to bank B: the amount stays *Reserved*, the workflow asks with status
-   inquiries, and after 5 minutes the transfer is *Under investigation* in the back office's queue. Start the clearing
-   house again: at the next inquiry (every 10 minutes) it learns the clearing house never got the payment and refunds it.
+   after the deadline. The same with bank B ticked under *Can't reach*. Set it back to *Normal*.
+6. Stop the clearing house (or set it to *Clearing house down*) and send money to bank B: the amount stays
+   *Reserved*, the workflow asks with status inquiries, and after 5 minutes the transfer is *Under investigation* in
+   the back office's queue. Start the clearing house again: at the next inquiry (every 10 minutes) it learns the
+   clearing house never got the payment and refunds it.
 7. Kill the app (`Ctrl+C`) while a transfer waits for its confirmation, start it again: the workflow continues where it
    stopped.
 8. Block Alice in the back office, try to send money from her account (rejected), unblock her again.
+9. Open an account in bank B and close it again (*Close*, only with a zero balance). Money sent to it from bank A is
+   rejected with `AC04`.
 
 ## API with curl
 
@@ -76,10 +79,11 @@ More endpoints:
 | `GET` | `/api/customer/accounts/{id}/postings` | the account's bookings |
 | `GET` | `/api/backoffice/accounts`, `/{id}`, `/{id}/postings` | customer accounts with balances, one of them, its postings |
 | `POST` | `/api/backoffice/accounts/{id}/block`, `/unblock` | block or unblock an account |
+| `POST` | `/api/backoffice/accounts/{id}/close` | close an account for good, only with a zero balance (409 otherwise) |
 | `GET` | `/api/backoffice/transfers?accountId=&status=&limit=` | every transfer, newest first; by account, or by status for the work queues |
 | `GET` | `/api/backoffice/transfers/{id}`, `/history`, `/postings` | a transfer's status, history and postings |
 | `GET` | `/api/operations/system-accounts`, `/{id}/postings` | the bank's own accounts and their postings |
-| `GET`, `PUT` | `/api/operations/clearing-house/chaos` | the clearing house's chaos settings, through the bank |
+| `GET`, `PUT` | `/api/operations/clearing-house/chaos` | the clearing house's chaos settings, through the bank: `forwardDelayMs`, `dropForwardRate`, `outage`, `unreachableBanks` (bank codes) |
 | `GET` | `/api/operations/clearing-house/settlement-accounts` | the participants' settlement accounts at the clearing house |
 | `POST` | `/api/clearing/inbound/pacs008` | for the clearing house: a payment from another bank |
 | `POST` | `/api/clearing/inbound/pacs002` | for the clearing house: the final status of a payment, sent or received |
